@@ -5,6 +5,7 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./pages/App.jsx";                // đường dẫn này PHẢI đúng
 import AuthProvider from "./auth/AuthProvider.jsx"; // file phải tồn tại
 import "./index.css";
+import "katex/dist/katex.min.css";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>

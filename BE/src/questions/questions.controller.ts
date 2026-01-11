@@ -192,7 +192,7 @@ export class QuestionsController {
   }
 
   @Get("by-ids")
-  async byIds(@Query("ids") ids?: string) {
+  async byIdsAlt(@Query("ids") ids?: string) {
     const rows = await this.questionsService.findByIds(ids);
     return ok(rows);
   }

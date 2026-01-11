@@ -1,13 +1,10 @@
-import { IsArray, IsOptional, IsString, ValidateNested } from "class-validator";
 import { Type } from "class-transformer";
+import { IsArray, IsBoolean, IsOptional, IsString, ValidateNested } from "class-validator";
 
-class PracticeResultItemDto {
-  @IsOptional()
-  questionId?: number;
-
+export class PracticeResultItemDto {
   @IsOptional()
   @IsString()
-  section?: string;
+  questionId?: string;
 
   @IsOptional()
   @IsString()
@@ -15,17 +12,14 @@ class PracticeResultItemDto {
 
   @IsOptional()
   @IsString()
+  section?: string;
+
+  @IsOptional()
+  @IsString()
   difficulty?: string;
 
-  correct: boolean;
-
-  @IsOptional()
-  @IsString()
-  picked?: string;
-
-  @IsOptional()
-  @IsString()
-  correctLabel?: string;
+  @IsBoolean()
+  correct!: boolean;
 }
 
 export class AiPracticeSummaryDto {
@@ -48,5 +42,5 @@ export class AiPracticeSummaryDto {
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => PracticeResultItemDto)
-  results: PracticeResultItemDto[];
+  results!: PracticeResultItemDto[];
 }

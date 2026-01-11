@@ -11,6 +11,7 @@ import * as path from "path";
 import { AiChatDto } from "./dto/chat.dto";
 import { AiGenerateTestDto } from "./dto/generate-test.dto";
 import { AiGeneratePracticeDto } from "./dto/generate-practice.dto";
+import { AiGenerateQuestionsDto } from "./dto/generate-questions.dto";
 
 import { AiConversation } from "../models/ai-conversation.model";
 import { AiMessage } from "../models/ai-message.model";
@@ -23,9 +24,12 @@ import { QuestionChoice } from "../models/question-choice.model";
 import { TestAssignment } from "../models/test-assignment.model";
 
 import { callOpenAI, callGemini, LlmMsg } from "./llm.providers";
-import { AiGenerateQuestionsDto } from "./dto/generate-questions.dto";
 
 type NormalizedChoice = { label: "A" | "B" | "C" | "D"; text: string };
+
+type NormalizedImage =
+  | { type: "svg"; svg: string; alt?: string | null }
+  | { type: "none" };
 
 type NormalizedQuestion = {
   stem: string;
@@ -35,12 +39,17 @@ type NormalizedQuestion = {
   skill: string | null;
   difficulty: "easy" | "medium" | "hard" | null;
   rationale?: string | null;
+  image?: NormalizedImage | null;
+};
+
+type NormalizedTest = {
+  title: string;
+  exam: "SAT" | "HSA";
+  questions: NormalizedQuestion[];
 };
 
 function normalizeChoiceLabel(x: any, idx: number): "A" | "B" | "C" | "D" {
-  const s = String(x ?? "")
-    .trim()
-    .toUpperCase();
+  const s = String(x ?? "").trim().toUpperCase();
   const cleaned = s.replace(/[^A-D1-4]/g, "");
   if (["A", "B", "C", "D"].includes(cleaned)) return cleaned as any;
   if (cleaned === "1") return "A";
@@ -49,12 +58,6 @@ function normalizeChoiceLabel(x: any, idx: number): "A" | "B" | "C" | "D" {
   if (cleaned === "4") return "D";
   return String.fromCharCode(65 + idx) as any;
 }
-
-type NormalizedTest = {
-  title: string;
-  exam: "SAT" | "HSA";
-  questions: NormalizedQuestion[];
-};
 
 function safeJsonParse(text: string): any | null {
   try {
@@ -98,6 +101,36 @@ export class AiService {
     if (mock === "true") return true;
     if (!process.env.AI_API_KEY && !process.env.OPENAI_API_KEY) return true;
     return false;
+  }
+
+  private ensureUploadsDir() {
+    const dir = path.join(process.cwd(), "uploads");
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    return dir;
+  }
+
+  private sanitizeSvg(raw: string) {
+    const s = String(raw || "").trim();
+    if (!s.startsWith("<svg")) return null;
+    if (s.length > 200_000) return null;
+    const lowered = s.toLowerCase();
+    if (lowered.includes("<script")) return null;
+    if (lowered.includes("onload=") || lowered.includes("onclick=")) return null;
+    if (lowered.includes("href=") && lowered.includes("http")) return null;
+    return s;
+  }
+
+  private saveSvgToUploads(svg: string, prefix: string) {
+    const sanitized = this.sanitizeSvg(svg);
+    if (!sanitized) return null;
+
+    const dir = this.ensureUploadsDir();
+    const name = `${prefix}-${Date.now()}-${Math.random()
+      .toString(16)
+      .slice(2)}.svg`;
+    const full = path.join(dir, name);
+    fs.writeFileSync(full, sanitized, "utf8");
+    return `/uploads/${name}`;
   }
 
   private logEvent(kind: string, data: any) {
@@ -145,120 +178,6 @@ export class AiService {
     return await tryPrimary();
   }
 
-  async generatePractice(userId: number, dto: AiGeneratePracticeDto) {
-    const count = Math.min(Math.max(Number(dto.count || 5), 1), 20);
-    const exam: "SAT" | "HSA" = dto.exam === "HSA" ? "HSA" : "SAT";
-
-    const section = String(dto.section || "math").trim();
-    const skill = String(dto.skill || "auto").trim();
-    const difficultyRaw = String(dto.difficulty || "mixed")
-      .trim()
-      .toLowerCase();
-
-    const difficulty =
-      difficultyRaw === "easy" ||
-      difficultyRaw === "medium" ||
-      difficultyRaw === "hard"
-        ? difficultyRaw
-        : difficultyRaw === "easy"
-        ? "easy"
-        : difficultyRaw === "medium"
-        ? "medium"
-        : difficultyRaw === "hard"
-        ? "hard"
-        : "mixed";
-
-    if (this.isMockEnabled()) {
-      const mock = this.buildMockNormalizedTest(exam, count);
-      return {
-        questions: mock.questions.map((q) => {
-          const correctIdx = ["A", "B", "C", "D"].indexOf(q.answer);
-          return {
-            content: q.stem,
-            section: q.section || section,
-            skill: q.skill || skill,
-            difficulty: (q.difficulty || "medium").toLowerCase(),
-            passage: null,
-            choices: q.choices.map((c, i) => ({
-              text: c.text,
-              isCorrect: i === correctIdx,
-              order: i + 1,
-            })),
-          };
-        }),
-      };
-    }
-
-    const sys: LlmMsg = {
-      role: "system",
-      content:
-        "Return ONLY valid JSON. No markdown. " +
-        "Each question must have exactly 4 choices labeled A,B,C,D. Exactly 1 correct. " +
-        'Schema: {"questions":[{"stem":string,"section":string,"skill":string,"difficulty":"easy"|"medium"|"hard",' +
-        '"choices":[{"label":"A"|"B"|"C"|"D","text":string}],' +
-        '"answer":"A"|"B"|"C"|"D","rationale":string}]}',
-    };
-
-    const userPrompt: LlmMsg = {
-      role: "user",
-      content:
-        `Create ${count} ${exam} questions.\n` +
-        `Section: ${section}\n` +
-        `Skill: ${skill}\n` +
-        `Difficulty: ${difficulty}\n` +
-        `Language: Vietnamese (SAT Reading may include short English).\n`,
-    };
-
-    const raw = await this.callLLM([sys, userPrompt]);
-    const parsed = safeJsonParse(raw);
-
-    if (!parsed?.questions || !Array.isArray(parsed.questions)) {
-      throw new BadRequestException("AI output invalid");
-    }
-
-    const out = parsed.questions.map((q: any) => {
-      const choices = (q.choices || []).map((c: any, i: number) => ({
-        label: normalizeChoiceLabel(c.label, i),
-        text: String(c.text || "").trim(),
-      }));
-
-      if (choices.length !== 4)
-        throw new BadRequestException("AI output choices must be 4");
-      if (choices.map((c: any) => c.label).join("") !== "ABCD") {
-        throw new BadRequestException("AI output choices label phải là A,B,C,D");
-      }
-
-      const answer = normalizeChoiceLabel(q.answer, 0);
-      if (!["A", "B", "C", "D"].includes(answer))
-        throw new BadRequestException("AI output missing answer");
-
-      const correctIdx = ["A", "B", "C", "D"].indexOf(answer);
-
-      const diff = String(q.difficulty || "")
-        .toLowerCase()
-        .trim();
-      const normalizedDiff = ["easy", "medium", "hard"].includes(diff)
-        ? diff
-        : "medium";
-
-      return {
-        content: String(q.stem || "").trim(),
-        section: String(q.section || section).trim(),
-        skill: String(q.skill || skill).trim(),
-        difficulty: normalizedDiff,
-        passage: null,
-        rationale: q.rationale ? String(q.rationale) : null,
-        choices: choices.map((c: any, i: number) => ({
-          text: c.text,
-          isCorrect: i === correctIdx,
-          order: i + 1,
-        })),
-      };
-    });
-
-    return { questions: out };
-  }
-
   private toNormalizedTest(exam: "SAT" | "HSA", obj: any): NormalizedTest {
     if (!obj || typeof obj !== "object")
       throw new BadRequestException("AI output không hợp lệ");
@@ -267,17 +186,20 @@ export class AiService {
     if (!title) throw new BadRequestException("AI output thiếu title");
 
     const rawQs = Array.isArray(obj.questions) ? obj.questions : [];
-    if (!rawQs.length) throw new BadRequestException("AI output thiếu questions");
+    if (!rawQs.length)
+      throw new BadRequestException("AI output thiếu questions");
 
     const outQs: NormalizedQuestion[] = rawQs.map((q: any) => {
       const stem = String(q.stem || q.content || "").trim();
       if (!stem)
-        throw new BadRequestException("AI output có question thiếu stem/content");
+        throw new BadRequestException(
+          "AI output có question thiếu stem/content"
+        );
 
       let choices: NormalizedChoice[] = [];
       if (Array.isArray(q.choices) && q.choices.length) {
-        choices = q.choices.map((c: any) => ({
-          label: String(c.label || "").toUpperCase(),
+        choices = q.choices.map((c: any, i: number) => ({
+          label: normalizeChoiceLabel(c.label, i),
           text: String(c.text || "").trim(),
         })) as any;
       } else if (Array.isArray(q.options) && q.options.length) {
@@ -290,13 +212,13 @@ export class AiService {
       if (choices.length !== 4)
         throw new BadRequestException("AI output cần đúng 4 lựa chọn");
 
-      const labels = choices.map((c) => c.label);
-      if (labels.join("") !== "ABCD")
-        throw new BadRequestException("AI output choices label phải là A,B,C,D");
+      const labels = choices.map((c) => c.label).join("");
+      if (labels !== "ABCD")
+        throw new BadRequestException(
+          "AI output choices label phải là A,B,C,D"
+        );
 
-      let answer = String(q.answer || "")
-        .toUpperCase()
-        .trim();
+      let answer = String(q.answer || "").toUpperCase().trim();
       if (!answer && Number.isFinite(Number(q.correctIndex))) {
         const idx = Number(q.correctIndex);
         if (idx < 0 || idx > 3)
@@ -306,9 +228,7 @@ export class AiService {
       if (!["A", "B", "C", "D"].includes(answer))
         throw new BadRequestException("AI output thiếu answer");
 
-      const difficultyRaw = String(q.difficulty || "")
-        .toLowerCase()
-        .trim();
+      const difficultyRaw = String(q.difficulty || "").toLowerCase().trim();
       const difficulty = (
         ["easy", "medium", "hard"].includes(difficultyRaw)
           ? difficultyRaw
@@ -319,6 +239,20 @@ export class AiService {
       const skill = q.skill ? String(q.skill) : null;
       const rationale = q.rationale ? String(q.rationale) : null;
 
+      let image: NormalizedImage | null = { type: "none" };
+      if (q.image && typeof q.image === "object") {
+        const t = String(q.image.type || "none").toLowerCase();
+        if (t === "svg" && typeof q.image.svg === "string") {
+          image = {
+            type: "svg",
+            svg: String(q.image.svg),
+            alt: q.image.alt ? String(q.image.alt) : null,
+          };
+        } else {
+          image = { type: "none" };
+        }
+      }
+
       return {
         stem,
         choices,
@@ -327,6 +261,7 @@ export class AiService {
         skill,
         difficulty,
         rationale,
+        image,
       };
     });
 
@@ -340,10 +275,44 @@ export class AiService {
   ) {
     const sys: LlmMsg = {
       role: "system",
-      content:
-        "You generate practice tests. Return ONLY valid JSON. No markdown, no explanations." +
-        'Schema: {"title": string, "exam": "SAT"|"HSA", "questions": [{"stem": string, "section": string, "skill": string, "difficulty": "easy"|"medium"|"hard", "choices": [{"label":"A"|"B"|"C"|"D","text":string}], "answer":"A"|"B"|"C"|"D", "rationale": string}] }' +
-        "Exactly 4 choices. Exactly 1 correct answer. Keep wording clear, unambiguous.",
+      content: `
+You generate SAT/HSA multiple-choice questions.
+
+Return ONLY valid JSON. No markdown. No explanations.
+
+Schema:
+{
+  "title": string,
+  "exam": "SAT" | "HSA",
+  "questions": [
+    {
+      "stem": string,
+      "section": string,
+      "skill": string,
+      "difficulty": "easy" | "medium" | "hard",
+      "image": {
+        "type": "svg" | "none",
+        "svg": string | null,
+        "alt": string | null
+      },
+      "choices": [
+        { "label": "A" | "B" | "C" | "D", "text": string }
+      ],
+      "answer": "A" | "B" | "C" | "D",
+      "rationale": string
+    }
+  ]
+}
+
+Rules:
+- Exactly 4 choices. Exactly 1 correct answer.
+- About 25% of questions MUST include an image with type "svg".
+- SVG images only for math graphs / geometry / simple logic diagrams.
+- SVG must include width and height, and only use basic shapes (line, circle, rect, path, text).
+- No external resources, no scripts, no events.
+- The stem MUST clearly reference the image when provided.
+- If no image is needed: "image": { "type": "none", "svg": null, "alt": null }.
+`,
     };
 
     const satSections = "reading_writing, math";
@@ -358,7 +327,7 @@ export class AiService {
         `Prioritize weaknesses: ${weaknessText}.\n` +
         `Difficulty distribution: 40% easy, 40% medium, 20% hard.\n` +
         `Language: Vietnamese. If SAT reading, short English passages are allowed.\n` +
-        `Return JSON strictly following schema.`,
+        `Return JSON strictly following schema.\n`,
     };
 
     return [sys, user] as LlmMsg[];
@@ -385,7 +354,7 @@ export class AiService {
       content:
         "You are a strict test quality judge. Return ONLY JSON." +
         'Schema: {"pass": boolean, "score": number, "issues": string[], "fixes": string[] }' +
-        "Criteria: 4 choices, exactly 1 correct, no ambiguous wording, difficulty matches, answer plausible.",
+        "Criteria: 4 choices, exactly 1 correct, no ambiguous wording, difficulty matches, answer plausible, and if image.type is svg then stem must reference it.",
     };
 
     const user: LlmMsg = {
@@ -424,37 +393,10 @@ export class AiService {
         `Regenerate a ${exam} test with ${num} questions.\n` +
         `Weaknesses: ${weaknessText}\n` +
         `Fix these issues:\n- ${feedback.join("\n- ")}\n` +
-        `Return JSON in the strict schema.`,
+        `Return JSON in the strict schema.\n`,
     };
 
     return [sys, user] as LlmMsg[];
-  }
-
-  async insightsAi(userId: number) {
-    const base = await this.insights(userId);
-
-    const provider = (process.env.AI_PRIMARY || "openai").toLowerCase();
-    const sys: LlmMsg = {
-      role: "system",
-      content:
-        "Bạn là gia sư luyện thi SAT/HSA. Viết nhận xét ngắn gọn, rõ ràng, có kế hoạch 7 ngày. Không markdown.",
-    };
-
-    const user: LlmMsg = {
-      role: "user",
-      content:
-        "Dữ liệu thống kê của học sinh:\n" +
-        JSON.stringify(base) +
-        '\nHãy trả về JSON schema: {"summary": string, "strengths": string[], "weaknesses": string[], "plan7d": {"day1": string, "day2": string, "day3": string, "day4": string, "day5": string, "day6": string, "day7": string}, "tips": string[] }',
-    };
-
-    const raw = await this.callProvider(provider, [sys, user]);
-    this.logEvent("insights_ai_response", { provider, raw: raw.slice(0, 4000) });
-
-    const obj = safeJsonParse(raw);
-    if (!obj) throw new BadRequestException("AI insights output không hợp lệ");
-
-    return obj;
   }
 
   async chat(userId: number, dto: AiChatDto) {
@@ -497,25 +439,6 @@ export class AiService {
     };
 
     const messages: LlmMsg[] = [sys, ...history];
-
-    if (dto.questionId) {
-      const q = await this.questionModel.findByPk(dto.questionId, {
-        include: [QuestionChoice],
-      });
-      if (q) {
-        const qq: any = q.toJSON();
-        const choices = (qq.questionChoices || [])
-          .slice()
-          .sort((a: any, b: any) => (a.choiceOrder ?? 0) - (b.choiceOrder ?? 0));
-        const formatted = choices
-          .map((c: any, i: number) => `${String.fromCharCode(65 + i)}. ${c.choiceText}`)
-          .join("\n");
-        messages.push({
-          role: "system",
-          content: `Ngữ cảnh câu hỏi trong DB (questionId=${dto.questionId}):\n${qq.content}\n\nĐáp án lựa chọn:\n${formatted}`,
-        });
-      }
-    }
 
     let reply = "";
     if (this.isMockEnabled()) {
@@ -674,6 +597,7 @@ export class AiService {
           skill: "arithmetic",
           difficulty,
           rationale: `Cộng ${a} và ${b} được ${ans}.`,
+          image: { type: "none" },
         });
       } else {
         const idx = (i % 4) as 0 | 1 | 2 | 3;
@@ -695,6 +619,7 @@ export class AiService {
           skill: "reasoning",
           difficulty,
           rationale: `Đáp án mẫu: ${answer}.`,
+          image: { type: "none" },
         });
       }
     }
@@ -704,6 +629,110 @@ export class AiService {
       exam,
       questions: qs,
     };
+  }
+
+  async generatePractice(userId: number, dto: AiGeneratePracticeDto) {
+    const count = Math.min(Math.max(Number(dto.count || 5), 1), 20);
+    const exam: "SAT" | "HSA" = dto.exam === "HSA" ? "HSA" : "SAT";
+
+    const section = String(dto.section || "math").trim();
+    const skill = String(dto.skill || "auto").trim();
+    const difficultyRaw = String(dto.difficulty || "mixed")
+      .trim()
+      .toLowerCase();
+
+    const difficulty =
+      difficultyRaw === "easy" ||
+      difficultyRaw === "medium" ||
+      difficultyRaw === "hard"
+        ? difficultyRaw
+        : "mixed";
+
+    if (this.isMockEnabled()) {
+      const mock = this.buildMockNormalizedTest(exam, count);
+      return {
+        questions: mock.questions.map((q) => {
+          const correctIdx = ["A", "B", "C", "D"].indexOf(q.answer);
+          return {
+            content: q.stem,
+            section: q.section || section,
+            skill: q.skill || skill,
+            difficulty: (q.difficulty || "medium").toLowerCase(),
+            passage: null,
+            choices: q.choices.map((c, i) => ({
+              text: c.text,
+              isCorrect: i === correctIdx,
+              order: i + 1,
+            })),
+          };
+        }),
+      };
+    }
+
+    const sys: LlmMsg = {
+      role: "system",
+      content:
+        "Return ONLY valid JSON. No markdown. " +
+        "Each question must have exactly 4 choices labeled A,B,C,D. Exactly 1 correct. " +
+        'Schema: {"questions":[{"stem":string,"section":string,"skill":string,"difficulty":"easy"|"medium"|"hard",' +
+        '"choices":[{"label":"A"|"B"|"C"|"D","text":string}],' +
+        '"answer":"A"|"B"|"C"|"D","rationale":string}]}',
+    };
+
+    const userPrompt: LlmMsg = {
+      role: "user",
+      content:
+        `Create ${count} ${exam} questions.\n` +
+        `Section: ${section}\n` +
+        `Skill: ${skill}\n` +
+        `Difficulty: ${difficulty}\n` +
+        `Language: Vietnamese (SAT Reading may include short English).\n`,
+    };
+
+    const raw = await this.callLLM([sys, userPrompt]);
+    const parsed = safeJsonParse(raw);
+
+    if (!parsed?.questions || !Array.isArray(parsed.questions)) {
+      throw new BadRequestException("AI output invalid");
+    }
+
+    const out = parsed.questions.map((q: any) => {
+      const choices = (q.choices || []).map((c: any, i: number) => ({
+        label: normalizeChoiceLabel(c.label, i),
+        text: String(c.text || "").trim(),
+      }));
+
+      if (choices.length !== 4)
+        throw new BadRequestException("AI output choices must be 4");
+      if (choices.map((c: any) => c.label).join("") !== "ABCD") {
+        throw new BadRequestException("AI output choices label phải là A,B,C,D");
+      }
+
+      const answer = normalizeChoiceLabel(q.answer, 0);
+      if (!["A", "B", "C", "D"].includes(answer))
+        throw new BadRequestException("AI output missing answer");
+
+      const correctIdx = ["A", "B", "C", "D"].indexOf(answer);
+
+      const diff = String(q.difficulty || "").toLowerCase().trim();
+      const normalizedDiff = ["easy", "medium", "hard"].includes(diff) ? diff : "medium";
+
+      return {
+        content: String(q.stem || "").trim(),
+        section: String(q.section || section).trim(),
+        skill: String(q.skill || skill).trim(),
+        difficulty: normalizedDiff,
+        passage: null,
+        rationale: q.rationale ? String(q.rationale) : null,
+        choices: choices.map((c: any, i: number) => ({
+          text: c.text,
+          isCorrect: i === correctIdx,
+          order: i + 1,
+        })),
+      };
+    });
+
+    return { questions: out };
   }
 
   async generateTest(user: any, dto: AiGenerateTestDto) {
@@ -742,22 +771,16 @@ export class AiService {
       if (hsa !== sat) {
         exam = hsa > sat ? "HSA" : "SAT";
       } else {
-        const weakText = weak
-          .map((w) => String(w.skill || "").toLowerCase())
-          .join(" ");
-        if (
-          weakText.includes("logic") ||
-          weakText.includes("reason") ||
-          weakText.includes("suy luận")
-        ) {
+        const weakText = weak.map((w) => String(w.skill || "").toLowerCase()).join(" ");
+        if (weakText.includes("logic") || weakText.includes("reason") || weakText.includes("suy luận")) {
           exam = "HSA";
         }
       }
     }
 
-    const fixedSat = 3600;
-    const fixedHsa = 3600;
-    const durationSec = exam === "SAT" ? fixedSat : fixedHsa;
+    const durationSec = dto.durationSec
+      ? clamp(Number(dto.durationSec), 600, 7200)
+      : 3600;
 
     let normalized: NormalizedTest | null = null;
 
@@ -787,15 +810,16 @@ export class AiService {
             ? this.buildGeneratePrompt(exam, num, weaknessText)
             : await this.regenerateWithFeedback(genProvider, exam, num, weaknessText, []);
 
-        this.logEvent("generate_prompt", { provider: genProvider, round, prompt });
+        this.logEvent("generate_prompt", { provider: genProvider, round });
 
         raw = await this.callProvider(genProvider, prompt);
         this.logEvent("generate_response", { provider: genProvider, round, raw: raw.slice(0, 4000) });
 
         obj = safeJsonParse(raw);
+
         try {
           normalized = this.toNormalizedTest(exam, obj);
-        } catch (e: any) {
+        } catch {
           const repaired = await this.repairJson(repairProvider, raw);
           normalized = this.toNormalizedTest(exam, repaired);
         }
@@ -817,12 +841,9 @@ export class AiService {
           [...(judge.issues || []), ...(judge.fixes || [])]
         );
 
-        this.logEvent("regenerate_prompt", { provider: genProvider, round, regenPrompt });
-
         raw = await this.callProvider(genProvider, regenPrompt);
-        this.logEvent("regenerate_response", { provider: genProvider, round, raw: raw.slice(0, 4000) });
-
         obj = safeJsonParse(raw);
+
         try {
           normalized = this.toNormalizedTest(exam, obj);
         } catch {
@@ -833,12 +854,11 @@ export class AiService {
         normalized.questions = normalized.questions.slice(0, num);
 
         const judge2 = await this.judgeTest(judgeProvider, exam, normalized);
-        this.logEvent("judge_result", { provider: judgeProvider, round: round + 0.5, judge: judge2 });
-
         if (judge2.pass) break;
 
-        if (round === maxRounds)
+        if (round === maxRounds) {
           throw new BadRequestException("AI generated test quality failed after judge");
+        }
       }
 
       if (!normalized) throw new BadRequestException("AI generate failed");
@@ -867,6 +887,18 @@ export class AiService {
       for (let i = 0; i < normalized!.questions.length; i++) {
         const q = normalized!.questions[i];
 
+        let imageUrl: string | null = null;
+        let imageAlt: string | null = null;
+
+        const img = (q as any)?.image;
+        if (img && typeof img === "object") {
+          const type = String(img.type || "none").toLowerCase();
+          if (type === "svg" && img.svg) {
+            imageUrl = this.saveSvgToUploads(String(img.svg), `q-${test.id}-${i + 1}`);
+            imageAlt = img.alt ? String(img.alt).slice(0, 240) : null;
+          }
+        }
+
         const question = await this.questionModel.create(
           {
             content: q.stem,
@@ -875,6 +907,9 @@ export class AiService {
             difficulty: q.difficulty || null,
             passage: null,
             model: process.env.AI_MODEL || null,
+            source: "ai",
+            imageUrl,
+            imageAlt,
           } as any,
           { transaction: t }
         );
@@ -924,12 +959,12 @@ export class AiService {
         "Giải thích ngắn gọn, từng bước. finalAnswer luôn là A/B/C/D.",
     };
 
-    const user: LlmMsg = {
+    const userMsg: LlmMsg = {
       role: "user",
       content: JSON.stringify({ exam, questions }).slice(0, 120000),
     };
 
-    const raw = await this.callLLM([sys, user]);
+    const raw = await this.callLLM([sys, userMsg]);
     const parsed = safeJsonParse(raw);
 
     if (parsed?.explanations && typeof parsed.explanations === "object") {
@@ -977,7 +1012,7 @@ export class AiService {
         "Đánh giá dựa trên kết quả đúng/sai theo skill và difficulty. Ngắn gọn, thực tế.",
     };
 
-    const user: LlmMsg = {
+    const userMsg: LlmMsg = {
       role: "user",
       content: JSON.stringify({
         exam,
@@ -991,7 +1026,7 @@ export class AiService {
       }).slice(0, 120000),
     };
 
-    const raw = await this.callLLM([sys, user]);
+    const raw = await this.callLLM([sys, userMsg]);
     const parsed = safeJsonParse(raw);
 
     if (parsed && typeof parsed === "object" && typeof parsed.summary === "string") {
@@ -1021,43 +1056,7 @@ export class AiService {
       return "medium";
     };
 
-    const planFromDistribution = () => {
-      const dist: any = (dto as any).distribution;
-      if (!dist || typeof dist !== "object") return null;
-
-      const buckets: Array<{
-        section: string;
-        skill: string;
-        difficulty: "easy" | "medium" | "hard";
-        count: number;
-      }> = [];
-
-      const sections = Array.isArray(dist.sections) ? dist.sections : [];
-      for (const s of sections) {
-        const section = String(s?.section || "").trim();
-        const skills = Array.isArray(s?.skills) ? s.skills : [];
-        for (const sk of skills) {
-          const skill = String(sk?.skill || "").trim();
-          const d = sk?.difficulty || {};
-          const easy = Number(d?.easy || 0) || 0;
-          const medium = Number(d?.medium || 0) || 0;
-          const hard = Number(d?.hard || 0) || 0;
-
-          if (section && skill && easy > 0) buckets.push({ section, skill, difficulty: "easy", count: easy });
-          if (section && skill && medium > 0) buckets.push({ section, skill, difficulty: "medium", count: medium });
-          if (section && skill && hard > 0) buckets.push({ section, skill, difficulty: "hard", count: hard });
-        }
-      }
-
-      const total = buckets.reduce((s, b) => s + b.count, 0);
-      if (!total) return null;
-
-      return { buckets, total };
-    };
-
     const fallbackNum = Math.min(Math.max(Number((dto as any).numQuestions || 5), 1), 40);
-    const distPlan = planFromDistribution();
-    const targetTotal = distPlan ? Math.min(distPlan.total, 40) : fallbackNum;
 
     const sys: LlmMsg = {
       role: "system",
@@ -1069,109 +1068,21 @@ export class AiService {
         '"answer":"A"|"B"|"C"|"D"}]}',
     };
 
-    const genBucket = async (
-      count: number,
-      section: string,
-      skill: string,
-      difficulty: "easy" | "medium" | "hard"
-    ) => {
-      const userPrompt: LlmMsg = {
-        role: "user",
-        content:
-          `Create ${count} ${exam} questions.\n` +
-          `Section: ${section}\n` +
-          `Skill: ${skill}\n` +
-          `Difficulty: ${difficulty}\n` +
-          `Language: Vietnamese (SAT Reading may include short English).\n`,
-      };
-
-      const raw = await this.callLLM([sys, userPrompt]);
-      const parsed = safeJsonParse(raw);
-
-      if (!parsed?.questions || !Array.isArray(parsed.questions)) {
-        throw new BadRequestException("AI output invalid");
-      }
-
-      const out = parsed.questions.map((q: any) => {
-        const choices = (q.choices || []).map((c: any, i: number) => ({
-          label: normalizeChoiceLabel(c.label, i),
-          text: String(c.text || "").trim(),
-        }));
-
-        if (choices.length !== 4) throw new BadRequestException("AI output choices must be 4");
-        const labels = choices.map((c) => c.label).join("");
-        if (labels !== "ABCD") throw new BadRequestException("AI output choices label phải là A,B,C,D");
-
-        const answer = normalizeChoiceLabel(q.answer, 0);
-        if (!["A", "B", "C", "D"].includes(answer))
-          throw new BadRequestException("AI output missing answer");
-
-        return {
-          stem: String(q.stem || "").trim(),
-          section: String(q.section || section).trim() || section,
-          skill: String(q.skill || skill).trim() || skill,
-          difficulty: normalizeDiff(q.difficulty || difficulty) as any,
-          choices,
-          answer,
-        };
-      });
-
-      return out;
+    const userPrompt: LlmMsg = {
+      role: "user",
+      content:
+        `Create ${fallbackNum} ${exam} questions.\n` +
+        `Section: ${dto.section || "auto"}\n` +
+        `Skill: ${dto.skill || "auto"}\n` +
+        `Difficulty: ${dto.difficulty || "mixed"}\n` +
+        `Language: Vietnamese (SAT Reading may include short English).\n`,
     };
 
-    const genFallbackMixed = async (n: number) => {
-      const userPrompt: LlmMsg = {
-        role: "user",
-        content:
-          `Create ${n} ${exam} questions.\n` +
-          `Section: ${dto.section || "auto"}\n` +
-          `Skill: ${dto.skill || "auto"}\n` +
-          `Difficulty: ${dto.difficulty || "mixed"}\n` +
-          `Language: Vietnamese (SAT Reading may include short English).\n`,
-      };
+    const raw = await this.callLLM([sys, userPrompt]);
+    const parsed = safeJsonParse(raw);
 
-      const raw = await this.callLLM([sys, userPrompt]);
-      const parsed = safeJsonParse(raw);
-
-      if (!parsed?.questions || !Array.isArray(parsed.questions)) {
-        throw new BadRequestException("AI output invalid");
-      }
-
-      return parsed.questions;
-    };
-
-    const allGenerated: any[] = [];
-
-    if (distPlan) {
-      const buckets = distPlan.buckets.slice();
-      let remaining = targetTotal;
-
-      for (const b of buckets) {
-        if (remaining <= 0) break;
-        const need = Math.min(b.count, remaining);
-        if (need <= 0) continue;
-
-        const qs = await genBucket(need, b.section, b.skill, b.difficulty);
-        allGenerated.push(
-          ...qs.map((x: any) => ({
-            stem: x.stem,
-            section: b.section,
-            skill: b.skill,
-            difficulty: b.difficulty,
-            choices: x.choices,
-            answer: x.answer,
-          }))
-        );
-
-        remaining -= need;
-      }
-
-      if (allGenerated.length !== targetTotal) {
-        throw new BadRequestException("AI generate distribution mismatch");
-      }
-    } else {
-      const mixed = await genFallbackMixed(targetTotal);
-      allGenerated.push(...mixed);
+    if (!parsed?.questions || !Array.isArray(parsed.questions)) {
+      throw new BadRequestException("AI output invalid");
     }
 
     const createdQuestionIds: number[] = [];
@@ -1193,33 +1104,26 @@ export class AiService {
         startOrder = Number((maxOrderRow as any)?.order || 0);
       }
 
-      for (const q of allGenerated) {
+      for (const q of parsed.questions) {
         const choices = (q.choices || []).map((c: any, i: number) => ({
           label: normalizeChoiceLabel(c.label, i),
           text: String(c.text || "").trim(),
         }));
 
-        if (choices.length !== 4)
-          throw new BadRequestException("AI output choices must be 4");
-        const labels = choices.map((c) => c.label).join("");
-        if (labels !== "ABCD")
-          throw new BadRequestException("AI output choices label phải là A,B,C,D");
+        if (choices.length !== 4) throw new BadRequestException("AI output choices must be 4");
+        const labels = choices.map((c: any) => c.label).join("");
+        if (labels !== "ABCD") throw new BadRequestException("AI output choices label phải là A,B,C,D");
 
         const answer = normalizeChoiceLabel(q.answer, 0);
-        if (!["A", "B", "C", "D"].includes(answer))
-          throw new BadRequestException("AI output missing answer");
+        if (!["A", "B", "C", "D"].includes(answer)) throw new BadRequestException("AI output missing answer");
 
         const question = await this.questionModel.create(
           {
             content: String(q.stem || "").trim(),
             section: q.section ? String(q.section) : dto.section || null,
             skill: q.skill ? String(q.skill) : dto.skill || null,
-            difficulty: q.difficulty ? String(q.difficulty) : dto.difficulty || null,
-            model:
-              process.env.OPENAI_MODEL ||
-              process.env.GEMINI_MODEL ||
-              process.env.AI_MODEL ||
-              null,
+            difficulty: normalizeDiff(q.difficulty) as any,
+            model: process.env.OPENAI_MODEL || process.env.GEMINI_MODEL || process.env.AI_MODEL || null,
             source: "ai",
           } as any,
           { transaction: t }
@@ -1248,22 +1152,11 @@ export class AiService {
       }
 
       if (testId) {
-        const total = await this.testQuestionModel.count({
-          where: { testId },
-          transaction: t,
-        });
-        await this.testModel.update(
-          { quantities: total },
-          { where: { id: testId }, transaction: t }
-        );
+        const total = await this.testQuestionModel.count({ where: { testId }, transaction: t });
+        await this.testModel.update({ quantities: total }, { where: { id: testId }, transaction: t });
       }
     });
 
-    return {
-      testId,
-      added: createdQuestionIds.length,
-      attached,
-      questionIds: createdQuestionIds,
-    };
+    return { testId, added: createdQuestionIds.length, attached, questionIds: createdQuestionIds };
   }
 }

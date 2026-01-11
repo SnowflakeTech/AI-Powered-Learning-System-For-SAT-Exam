@@ -2,6 +2,13 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import DashboardNavbar from "../components/DashboardNavBar.jsx";
 import { apiGet, apiPost } from "../lib/apiClient.js";
+import MathText from "../components/MathText.jsx";
+
+const FILE_BASE =
+  import.meta.env.VITE_FILE_BASE_URL ||
+  (import.meta.env.VITE_API_BASE_URL
+    ? String(import.meta.env.VITE_API_BASE_URL).replace("/api/v1", "")
+    : "http://localhost:8000");
 
 function fmt(sec) {
   const m = Math.floor(sec / 60);
@@ -9,7 +16,6 @@ function fmt(sec) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-// cố gắng lấy choices từ nhiều kiểu backend khác nhau
 function pickChoices(q) {
   return (
     q?.questionChoices ||
@@ -31,12 +37,12 @@ function normalizeQuestions(rawList) {
 }
 
 export default function Exam() {
-  const { id } = useParams(); // testId
+  const { id } = useParams();
   const nav = useNavigate();
 
   const [test, setTest] = useState(null);
   const [questions, setQuestions] = useState([]);
-  const [answers, setAnswers] = useState({}); // { [questionId]: choiceId }
+  const [answers, setAnswers] = useState({});
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
 
@@ -61,18 +67,12 @@ export default function Exam() {
       setErr("");
       try {
         const res = await apiGet(`/tests/${id}/questions`);
-        console.log("EXAM API RES =", res);
 
-        // apiGet có thể trả:
-        // A) { success, data: { test, questions } }
-        // B) { test, questions }
-        // C) axios response: { data: { success, data: { test, questions } } }
         const root = res?.data ?? res;
-        const payload = root?.data ?? root; // nếu root là {success,data:{...}}
-        const inner = payload?.data ?? payload; // nếu payload vẫn bọc 1 tầng data
+        const payload = root?.data ?? root;
+        const inner = payload?.data ?? payload;
 
-        const testObj =
-          inner?.test ?? payload?.test ?? root?.test ?? null;
+        const testObj = inner?.test ?? payload?.test ?? root?.test ?? null;
 
         const qs =
           inner?.questions ??
@@ -104,52 +104,57 @@ export default function Exam() {
   }, [answers, questions]);
 
   const submit = async (auto = false) => {
-  if (submitting) return;
-  setSubmitErr("");
-  setSubmitting(true);
-  try {
-    const usedSec = Math.max(0, (durationSec || 0) - (left || 0));
+    if (submitting) return;
+    setSubmitErr("");
+    setSubmitting(true);
+    try {
+      const usedSec = Math.max(0, (durationSec || 0) - (left || 0));
 
-    const res = await apiPost(`/tests/${id}/attempts`, {
-      durationSec: usedSec,
-      answers,
-    });
+      const res = await apiPost(`/tests/${id}/attempts`, {
+        durationSec: usedSec,
+        answers,
+      });
 
-    // unwrap (phòng trường hợp response bị bọc nhiều tầng)
-    const root = res?.data ?? res;
-    const payload = root?.data ?? root;
-    const attempt = payload?.data ?? payload;
+      const root = res?.data ?? res;
+      const payload = root?.data ?? root;
+      const attempt = payload?.data ?? payload;
 
-    alert(
-      `Đã nộp bài${auto ? " (tự động hết giờ)" : ""}: ${attempt?.correct ?? score.correct}/${attempt?.totalQuestions ?? score.total} đúng • Điểm ${attempt?.score ?? 0}/${attempt?.totalScore ?? 800}`
-    );
+      alert(
+        `Đã nộp bài${auto ? " (tự động hết giờ)" : ""}: ${
+          attempt?.correct ?? score.correct
+        }/${attempt?.totalQuestions ?? score.total} đúng • Điểm ${
+          attempt?.score ?? 0
+        }/${attempt?.totalScore ?? 800}`
+      );
 
-    const key = attempt?.id || (attempt?.attemptId ? `attempt-${attempt.attemptId}` : null);
-    if (key) nav(`/history/${key}`);
-    else nav("/history");
-  } catch (e) {
-    setSubmitErr(e?.message || "Nộp bài thất bại");
-  } finally {
-    setSubmitting(false);
-  }
-};
+      const key =
+        attempt?.id ||
+        (attempt?.attemptId ? `attempt-${attempt.attemptId}` : null);
+      if (key) nav(`/history/${key}`);
+      else nav("/history");
+    } catch (e) {
+      setSubmitErr(e?.message || "Nộp bài thất bại");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
+  useEffect(() => {
+    if (loading) return;
+    if (!questions.length) return;
+    if (left !== 0) return;
+    if (submitting) return;
+    submit(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [left, loading, questions.length]);
 
-
-// hết giờ thì tự nộp (1 lần)
-useEffect(() => {
-  if (loading) return;
-  if (!questions.length) return;
-  if (left !== 0) return;
-  if (submitting) return;
-  submit(true);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [left, loading, questions.length]);
   if (loading) {
     return (
       <div className="min-h-screen bg-neutral-50">
         <DashboardNavbar />
-        <div className="max-w-4xl mx-auto p-6 text-neutral-600">Đang tải đề...</div>
+        <div className="max-w-4xl mx-auto p-6 text-neutral-600">
+          Đang tải đề...
+        </div>
       </div>
     );
   }
@@ -173,23 +178,20 @@ useEffect(() => {
     );
   }
 
-  // Nếu vẫn 0 câu, báo rõ để biết API thật sự rỗng hay FE
   if (!questions.length) {
     return (
       <div className="min-h-screen bg-neutral-50">
         <DashboardNavbar />
         <div className="max-w-5xl mx-auto p-6">
-          <h1 className="text-2xl font-semibold">{test?.title || `Test #${id}`}</h1>
+          <h1 className="text-2xl font-semibold">
+            {test?.title || `Test #${id}`}
+          </h1>
           <p className="text-sm text-neutral-600 mt-1">
             Mode: {test?.mode} • {questions.length} câu
           </p>
 
           <div className="mt-6 p-4 rounded-2xl bg-yellow-50 border border-yellow-200 text-yellow-800">
             Đề này hiện chưa load được câu hỏi.
-            <div className="mt-2 text-sm text-yellow-900">
-              - Hãy mở DevTools → Network và kiểm tra request <b>/tests/{id}/questions</b> có trả về mảng questions không.
-              <br />- Nếu API có questions mà UI vẫn 0: nghĩa là response bị bọc khác shape, bạn gửi mình screenshot response là mình chỉnh ngay.
-            </div>
           </div>
 
           <button
@@ -209,7 +211,9 @@ useEffect(() => {
       <div className="max-w-5xl mx-auto p-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold">{test?.title || `Test #${id}`}</h1>
+            <h1 className="text-2xl font-semibold">
+              {test?.title || `Test #${id}`}
+            </h1>
             <p className="text-sm text-neutral-600 mt-1">
               Mode: {test?.mode} • {questions.length} câu
             </p>
@@ -223,7 +227,10 @@ useEffect(() => {
             <button
               onClick={() => submit(false)}
               disabled={submitting}
-              className={"px-4 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-500 " + (submitting ? "opacity-60 cursor-not-allowed" : "")}
+              className={
+                "px-4 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-500 " +
+                (submitting ? "opacity-60 cursor-not-allowed" : "")
+              }
             >
               {submitting ? "Đang nộp..." : "Nộp bài"}
             </button>
@@ -235,10 +242,32 @@ useEffect(() => {
 
         <div className="mt-6 space-y-4">
           {questions.map((q, idx) => (
-            <div key={q.id} className="bg-white rounded-2xl border border-neutral-200 p-5">
+            <div
+              key={q.id}
+              className="bg-white rounded-2xl border border-neutral-200 p-5"
+            >
               <div className="font-medium">
-                Câu {idx + 1}: <span className="font-normal">{q.content}</span>
+                Câu {idx + 1}:
+                <div className="mt-1 text-neutral-800">
+                  <MathText text={q.content} />
+                </div>
               </div>
+
+              {q.imageUrl ? (
+                <div className="mt-3">
+                  <img
+                    src={`${FILE_BASE}${q.imageUrl}`}
+                    alt={q.imageAlt || "Hình minh hoạ"}
+                    className="max-w-full rounded-xl border border-neutral-200 bg-white"
+                    loading="lazy"
+                  />
+                  {q.imageAlt ? (
+                    <div className="mt-1 text-xs text-neutral-500">
+                      {q.imageAlt}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
 
               <div className="mt-3 grid gap-2">
                 {(q.questionChoices || [])
@@ -259,11 +288,17 @@ useEffect(() => {
                         name={`q-${q.id}`}
                         className="mt-1"
                         checked={answers[q.id] === c.id}
-                        onChange={() => setAnswers((prev) => ({ ...prev, [q.id]: c.id }))}
+                        onChange={() =>
+                          setAnswers((prev) => ({ ...prev, [q.id]: c.id }))
+                        }
                       />
                       <div>
-                        <div className="text-sm font-semibold">{String.fromCharCode(65 + i)}.</div>
-                        <div className="text-sm text-neutral-800">{c.choiceText}</div>
+                        <div className="text-sm font-semibold">
+                          {String.fromCharCode(65 + i)}.
+                        </div>
+                        <div className="text-sm text-neutral-800">
+                          <MathText text={c.choiceText} />
+                        </div>
                       </div>
                     </label>
                   ))}
@@ -273,7 +308,8 @@ useEffect(() => {
         </div>
 
         <div className="mt-6 text-sm text-neutral-600">
-          Đã chọn {Object.keys(answers).length}/{questions.length} câu • Đúng hiện tại: {score.correct}
+          Đã chọn {Object.keys(answers).length}/{questions.length} câu • Đúng hiện
+          tại: {score.correct}
         </div>
       </div>
     </div>

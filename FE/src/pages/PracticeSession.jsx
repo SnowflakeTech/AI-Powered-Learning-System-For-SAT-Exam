@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import DashboardNavBar from "../components/DashboardNavBar.jsx";
 import { apiGet, apiPost } from "../lib/apiClient.js";
 import { useLocation, useNavigate } from "react-router-dom";
+import MathContent from "../components/MathContent.jsx";
 
 function useQuery() {
   const { search } = useLocation();
@@ -108,7 +109,8 @@ export default function PracticeSession() {
 
         const pickedId = answers[qq.id];
         const pickedIdx = (qq.choices || []).findIndex((c) => c.id === pickedId);
-        const pickedLabel = pickedIdx >= 0 ? String.fromCharCode(65 + pickedIdx) : null;
+        const pickedLabel =
+          pickedIdx >= 0 ? String.fromCharCode(65 + pickedIdx) : null;
 
         return {
           questionId: qq.id,
@@ -144,7 +146,9 @@ export default function PracticeSession() {
           section: x.section,
           skill: x.skill,
           difficulty: x.difficulty,
-          correct: x.picked ? String(x.picked).toUpperCase() === String(x.correct).toUpperCase() : false,
+          correct: x.picked
+            ? String(x.picked).toUpperCase() === String(x.correct).toUpperCase()
+            : false,
           picked: x.picked,
           correctLabel: x.correct,
         })),
@@ -220,9 +224,13 @@ export default function PracticeSession() {
 
         <div className="mt-6 space-y-4">
           {loading ? (
-            <div className="rounded-2xl border border-neutral-200 bg-white p-6">Đang tải...</div>
+            <div className="rounded-2xl border border-neutral-200 bg-white p-6">
+              Đang tải...
+            </div>
           ) : questions.length === 0 ? (
-            <div className="rounded-2xl border border-neutral-200 bg-white p-6">Không có câu hỏi phù hợp.</div>
+            <div className="rounded-2xl border border-neutral-200 bg-white p-6">
+              Không có câu hỏi phù hợp.
+            </div>
           ) : (
             questions.map((qq, idx) => {
               const picked = answers[qq.id];
@@ -232,7 +240,10 @@ export default function PracticeSession() {
               const exp = explanations?.[key];
 
               return (
-                <div key={qq.id} className="rounded-2xl border border-neutral-200 bg-white p-6">
+                <div
+                  key={qq.id}
+                  className="rounded-2xl border border-neutral-200 bg-white p-6"
+                >
                   <div className="text-sm text-neutral-600">
                     Câu {idx + 1} • {qq.section} • {qq.skill} • {qq.difficulty}
                   </div>
@@ -240,18 +251,25 @@ export default function PracticeSession() {
                   {qq.imageUrl ? (
                     <img
                       src={`${getApiHost()}${qq.imageUrl}`}
-                      alt=""
-                      className="mt-3 max-h-72 rounded-xl border border-neutral-200"
+                      alt={qq.imageAlt || ""}
+                      className="mt-3 max-h-72 rounded-xl border border-neutral-200 bg-white"
+                      loading="lazy"
                     />
                   ) : null}
 
-                  <div className="mt-3 font-medium">{qq.content}</div>
+                  <div className="mt-3">
+                    <div className="font-medium mb-1">Đề bài</div>
+                    <div className="text-neutral-900">
+                      <MathContent content={qq.content} />
+                    </div>
+                  </div>
 
                   <div className="mt-4 space-y-2">
                     {(qq.choices || []).map((c, i) => {
                       const isPicked = picked === c.id;
                       const isCorrect = submitted && correct && c.id === correct.id;
-                      const isWrongPicked = submitted && isPicked && correct && c.id !== correct.id;
+                      const isWrongPicked =
+                        submitted && isPicked && correct && c.id !== correct.id;
 
                       return (
                         <button
@@ -264,8 +282,12 @@ export default function PracticeSession() {
                             isWrongPicked ? "bg-red-50 border-red-200" : "",
                           ].join(" ")}
                         >
-                          <div className="font-semibold">{String.fromCharCode(65 + i)}.</div>
-                          <div className="mt-1">{c.text}</div>
+                          <div className="font-semibold">
+                            {String.fromCharCode(65 + i)}.
+                          </div>
+                          <div className="mt-1 text-neutral-900">
+                            <MathContent content={c.text} />
+                          </div>
                         </button>
                       );
                     })}
@@ -275,9 +297,13 @@ export default function PracticeSession() {
                     <div className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm">
                       <div className="font-semibold">Giải đáp</div>
                       <div className="mt-1">
-                        {aiLoading && !exp ? "Đang tạo giải đáp..." : exp?.explanation || "Chưa có giải đáp."}
+                        {aiLoading && !exp
+                          ? "Đang tạo giải đáp..."
+                          : exp?.explanation || "Chưa có giải đáp."}
                       </div>
-                      {exp?.note ? <div className="mt-2 text-neutral-600">{exp.note}</div> : null}
+                      {exp?.note ? (
+                        <div className="mt-2 text-neutral-600">{exp.note}</div>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>
@@ -290,7 +316,9 @@ export default function PracticeSession() {
           <div className="mt-6 rounded-2xl border border-neutral-200 bg-white p-6">
             <div className="text-lg font-semibold">Đánh giá năng lực</div>
             {aiLoading && !aiSummary ? (
-              <div className="mt-2 text-sm text-neutral-600">Đang tạo đánh giá...</div>
+              <div className="mt-2 text-sm text-neutral-600">
+                Đang tạo đánh giá...
+              </div>
             ) : aiSummary ? (
               <div className="mt-3 space-y-3">
                 <div>{aiSummary.summary}</div>

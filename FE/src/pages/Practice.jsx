@@ -10,7 +10,12 @@ const SAT = {
     "Expression of Ideas",
     "Standard English Conventions",
   ],
-  math: ["Algebra", "Advanced Math", "Problem Solving and Data Analysis", "Geometry and Trigonometry"],
+  math: [
+    "Algebra",
+    "Advanced Math",
+    "Problem Solving and Data Analysis",
+    "Geometry and Trigonometry",
+  ],
 };
 
 const HSA = {
@@ -53,9 +58,11 @@ export default function Practice() {
       setErr("");
       setLoading(true);
 
+      const n = Math.max(1, Math.min(40, Number(count) || 10));
+
       const payload = {
         exam,
-        numQuestions: Math.max(1, Math.min(40, Number(count) || 10)),
+        numQuestions: n,
         section: section || undefined,
         skill: skill || undefined,
         difficulty: difficulty === "mixed" ? undefined : difficulty,
@@ -64,7 +71,8 @@ export default function Practice() {
       const res = await apiPost("/ai/generate-questions", payload);
       const ids = res?.data?.questionIds || res?.questionIds || [];
 
-      if (!Array.isArray(ids) || ids.length === 0) throw new Error("AI không trả về questionIds");
+      if (!Array.isArray(ids) || ids.length === 0)
+        throw new Error("AI không trả về questionIds");
 
       nav(`/practice/session?ids=${ids.join(",")}`, { replace: false });
     } catch (e) {
@@ -81,12 +89,16 @@ export default function Practice() {
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <h1 className="text-2xl font-semibold">Luyện theo kỹ năng</h1>
-            <p className="mt-2 text-neutral-600">Chọn Section/Skill/Difficulty và số câu, rồi AI tạo đúng bộ câu để làm ngay.</p>
+            <p className="mt-2 text-neutral-600">
+              Chọn Section/Skill/Difficulty và số câu, rồi AI tạo đúng bộ câu để làm ngay.
+            </p>
           </div>
         </div>
 
         {err ? (
-          <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-red-700">{err}</div>
+          <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-red-700">
+            {err}
+          </div>
         ) : null}
 
         <div className="mt-6 bg-white rounded-2xl border border-neutral-200 shadow-sm p-6">
@@ -98,8 +110,7 @@ export default function Practice() {
                 onChange={(e) => {
                   const v = e.target.value;
                   setExam(v);
-                  const s0 = v === "SAT" ? "math" : "math";
-                  setSection(s0);
+                  setSection("math");
                   setSkill("");
                 }}
                 className="w-full rounded-xl border border-neutral-300 bg-white px-3 py-2"

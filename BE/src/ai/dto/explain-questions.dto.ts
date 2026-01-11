@@ -1,28 +1,33 @@
-import { IsArray, IsOptional, IsString, ValidateNested } from "class-validator";
 import { Type } from "class-transformer";
+import { IsArray, IsOptional, IsString, ValidateNested } from "class-validator";
 
-class ExplainChoiceDto {
+export class ExplainChoiceDto {
   @IsString()
-  label: string;
+  label!: string;
 
   @IsString()
-  text: string;
+  text!: string;
 }
 
-class ExplainQuestionDto {
+export class ExplainQuestionDto {
   @IsOptional()
-  questionId?: number;
+  @IsString()
+  questionId?: string;
+
+  @IsOptional()
+  @IsString()
+  id?: string;
 
   @IsString()
-  content: string;
+  content!: string;
 
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => ExplainChoiceDto)
-  choices: ExplainChoiceDto[];
+  choices!: ExplainChoiceDto[];
 
   @IsString()
-  correct: string;
+  correct!: string;
 
   @IsOptional()
   @IsString()
@@ -30,12 +35,12 @@ class ExplainQuestionDto {
 }
 
 export class AiExplainQuestionsDto {
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => ExplainQuestionDto)
-  questions: ExplainQuestionDto[];
-
   @IsOptional()
   @IsString()
   exam?: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ExplainQuestionDto)
+  questions!: ExplainQuestionDto[];
 }

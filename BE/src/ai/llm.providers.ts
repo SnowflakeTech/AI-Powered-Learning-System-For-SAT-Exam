@@ -44,7 +44,7 @@ export async function callOpenAI(messages: LlmMsg[]): Promise<string> {
 
 export async function callGemini(messages: LlmMsg[]): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY || "";
-  const modelName = process.env.GEMINI_MODEL || "gemini-1.5-flash";
+  const modelName = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
   if (!apiKey) throw new BadRequestException("Missing GEMINI_API_KEY");
 
