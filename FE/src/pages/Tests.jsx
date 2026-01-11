@@ -1,16 +1,20 @@
-// src/pages/Tests.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import DashboardNavbar from "../components/DashboardNavBar.jsx";
-import { apiDelete, apiGet } from "../lib/apiClient.js";
+import { apiDelete, apiGet, apiPost } from "../lib/apiClient.js";
 import { useAuth } from "../auth/AuthProvider.jsx";
 
 export default function Tests() {
   const nav = useNavigate();
   const { user } = useAuth();
+
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiPublic, setAiPublic] = useState(false);
+  const [aiCount, setAiCount] = useState(10);
 
   const isAdmin = user?.role === "admin";
 
@@ -32,9 +36,7 @@ export default function Tests() {
   }, []);
 
   const goExam = (id) => nav(`/exam/${id}`);
-
   const goCreate = () => nav("/admin/tests/new");
-
   const goEdit = (id) => nav(`/admin/tests/${id}/edit`);
 
   const deleteTest = async (id) => {
@@ -47,21 +49,91 @@ export default function Tests() {
     }
   };
 
+  const canGenerate = useMemo(() => {
+    const n = Number(aiCount);
+    return Number.isFinite(n) && n >= 5 && n <= 40;
+  }, [aiCount]);
+
+  const createAiTest = async () => {
+    if (!canGenerate) {
+      setErr("Số câu phải trong khoảng 5–40.");
+      return;
+    }
+
+    setAiLoading(true);
+    setErr("");
+    try {
+      const payload = {
+        exam: "auto",
+        numQuestions: Number(aiCount),
+        isPublic: isAdmin ? aiPublic : false,
+      };
+
+      const res = await apiPost("/ai/generate-test", payload);
+      const testId = res?.data?.testId;
+
+      await load();
+
+      if (testId && confirm("Tạo đề AI thành công. Bạn muốn làm bài ngay không?")) {
+        nav(`/exam/${testId}`);
+      }
+    } catch (e) {
+      setErr(e?.message || "Tạo đề AI thất bại");
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-neutral-50">
       <DashboardNavbar />
 
       <div className="max-w-6xl mx-auto p-6">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-2xl font-semibold">Danh sách đề thi</h1>
-          {isAdmin && (
-            <button
-              onClick={goCreate}
-              className="px-4 py-2 rounded-xl bg-neutral-900 text-white hover:bg-neutral-800"
-            >
-              + Tạo đề thi
-            </button>
-          )}
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+            <div className="flex items-center gap-2">
+              <input
+                value={aiCount}
+                onChange={(e) => setAiCount(e.target.value)}
+                inputMode="numeric"
+                className="w-24 px-3 py-2 rounded-xl border border-neutral-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-green-200"
+                placeholder="Số câu"
+              />
+
+              {isAdmin && (
+                <label className="flex items-center gap-2 text-sm text-neutral-700 select-none">
+                  <input
+                    type="checkbox"
+                    checked={aiPublic}
+                    onChange={(e) => setAiPublic(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  Công khai
+                </label>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={createAiTest}
+                disabled={aiLoading}
+                className="px-4 py-2 rounded-xl bg-green-700 text-white hover:bg-green-600 disabled:opacity-60"
+              >
+                {aiLoading ? "Đang tạo..." : "+ Tạo đề AI"}
+              </button>
+
+              {isAdmin && (
+                <button
+                  onClick={goCreate}
+                  className="px-4 py-2 rounded-xl bg-neutral-900 text-white hover:bg-neutral-800"
+                >
+                  + Tạo đề thi
+                </button>
+              )}
+            </div>
+          </div>
         </div>
 
         {err && (

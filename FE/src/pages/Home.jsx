@@ -216,8 +216,7 @@ export default function Home() {
                 Hệ thống này do ai phát triển?
               </p>
               <p>
-                Hệ thống được xây dựng và phát triển bởi các thành viên thuộc 
-                nhóm 12 và 13 trong khuôn khổ học phần 2526I_INT3220E_1 do 
+                Hệ thống được xây dựng và phát triển bởi Phạm Tiến Sơn và Lê Quốc Anh trong khuôn khổ học phần 2526I_INT3220E_1 do 
                 giảng viên Nguyễn Ngọc Hóa hướng dẫn.
               </p>
             </div>

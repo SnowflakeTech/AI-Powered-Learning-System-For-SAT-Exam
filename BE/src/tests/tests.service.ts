@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { Op } from 'sequelize';
 
@@ -34,14 +34,17 @@ export class TestsService {
   async canAccessTest(user: any, testId: number) {
     if (!user) return false;
     if (user.role === 'admin') return true;
-    const test = await this.testModel.findByPk(testId, { attributes: ['id', 'isPublic'] });
+
+    const test = await this.testModel.findByPk(testId, { attributes: ['id', 'isPublic', 'userId'] });
     if (!test) return false;
+
     if ((test as any).isPublic) return true;
+    if ((test as any).userId && Number((test as any).userId) === Number(user.id)) return true;
+
     return this.isAssigned(user.id, testId);
   }
 
   async listForUser(user: any) {
-    // admin thấy tất cả
     if (user?.role === 'admin') {
       return this.testModel.findAll({
         attributes: ['id', 'title', 'mode', 'quantities', 'durationSec', 'createdAt', 'isPublic', 'source'],
@@ -54,16 +57,75 @@ export class TestsService {
 
     return this.testModel.findAll({
       where: {
-        [Op.or]: [{ isPublic: true }, ...(ids.length ? [{ id: { [Op.in]: ids } }] : [])],
+        [Op.or]: [
+          { isPublic: true },
+          { userId: user.id },
+          ...(ids.length ? [{ id: { [Op.in]: ids } }] : []),
+        ],
       } as any,
       attributes: ['id', 'title', 'mode', 'quantities', 'durationSec', 'createdAt', 'isPublic', 'source'],
       order: [['id', 'DESC']],
     });
   }
 
+  async getOne(userId: number, testId: number) {
+    const test = await this.testModel.findByPk(testId);
+    if (!test) throw new NotFoundException('Test not found');
+
+    const ok =
+      (test as any).isPublic === true ||
+      (test as any).userId === userId ||
+      (await this.isAssigned(userId, testId));
+
+    if (!ok) throw new ForbiddenException('Forbidden');
+
+    const items = await this.testQuestionModel.findAll({
+      where: { testId },
+      include: [
+        {
+          model: Question,
+          include: [QuestionChoice],
+        },
+      ],
+      order: [['order', 'ASC']],
+    });
+
+    const questions = items.map((tq: any) => {
+      const q = tq.question?.toJSON?.() || tq.question;
+      const choices = (q?.questionChoices || [])
+        .slice()
+        .sort((a: any, b: any) => (a.choiceOrder ?? 0) - (b.choiceOrder ?? 0))
+        .map((c: any) => ({
+          id: c.id,
+          text: c.choiceText,
+          isCorrect: c.isCorrect,
+          order: c.choiceOrder,
+        }));
+
+      return {
+        id: q.id,
+        content: q.content,
+        section: q.section,
+        skill: q.skill,
+        difficulty: q.difficulty,
+        passage: q.passage,
+        explanation: q.explanation,
+        imageUrl: q.imageUrl,
+        choices,
+      };
+    });
+
+    return {
+      id: test.id,
+      title: test.title,
+      mode: test.mode,
+      durationSec: test.durationSec,
+      quantities: test.quantities,
+      questions,
+    };
+  }
+
   async create(userId: number, dto: CreateTestDto) {
-    // NOTE: Không cho FE set primary key `id` của bảng tests (DB dùng AUTO_INCREMENT).
-    // Nếu cần "ID hiển thị", dùng dto.code để prefix vào title.
     const rawTitle = (dto.title ?? '').trim() || `New Test ${Date.now()}`;
     const code = (dto.code ?? '').trim();
     const title = code ? `[${code}] ${rawTitle}` : rawTitle;
@@ -144,26 +206,13 @@ export class TestsService {
     return { removed, total };
   }
 
-  /**
-   * Xoá hẳn đề thi.
-   * - Luôn xoá link test_questions
-   * - Tuỳ chọn: xoá luôn các câu hỏi/choices bị orphan (không còn thuộc test nào)
-   */
-    /**
-   * Xoá đề thi.
-   * Mặc định: xoá đề + link test_questions + lịch sử làm bài (attempts/answers) của đề đó.
-   * Không xoá bảng questions/choices (tránh đụng FK feedback, attempt cũ...).
-   * Nếu thật sự muốn xoá luôn câu hỏi orphan thì set ?deleteOrphans=true.
-   */
   async removeTest(testId: number, deleteOrphans = false) {
     const test = await this.testModel.findByPk(testId);
     if (!test) throw new NotFoundException('Không tìm thấy đề thi');
 
-    // Lấy danh sách questionIds đang thuộc đề (để tuỳ chọn xoá orphan)
     const links = await this.testQuestionModel.findAll({ where: { testId } });
     const questionIds = Array.from(new Set(links.map((l) => l.questionId)));
 
-    // Lấy attemptIds để xoá answers trước
     const attempts = await this.attemptModel.findAll({
       where: { testId },
       attributes: ['id'],
@@ -172,19 +221,14 @@ export class TestsService {
 
     const sequelize: any = (this.testModel as any).sequelize;
     await sequelize.transaction(async (t: any) => {
-      // Gỡ FK trong feedback để không bị chặn khi xoá attempts/tests
       if (attemptIds.length > 0) {
         await this.feedbackModel.update(
           { attemptId: null },
           { where: { attemptId: { [Op.in]: attemptIds } }, transaction: t },
         );
       }
-      await this.feedbackModel.update(
-        { testId: null },
-        { where: { testId }, transaction: t },
-      );
+      await this.feedbackModel.update({ testId: null }, { where: { testId }, transaction: t });
 
-      // Xoá attempt answers -> attempts
       if (attemptIds.length > 0) {
         await this.attemptAnswerModel.destroy({
           where: { attemptId: { [Op.in]: attemptIds } },
@@ -193,13 +237,9 @@ export class TestsService {
       }
       await this.attemptModel.destroy({ where: { testId }, transaction: t });
 
-      // Xoá link test_questions
       await this.testQuestionModel.destroy({ where: { testId }, transaction: t });
-
-      // Xoá test
       await this.testModel.destroy({ where: { id: testId }, transaction: t });
 
-      // Tuỳ chọn: xoá questions/choices orphan
       if (deleteOrphans && questionIds.length > 0) {
         const remainLinks = await this.testQuestionModel.findAll({
           where: { questionId: { [Op.in]: questionIds } },
@@ -210,20 +250,13 @@ export class TestsService {
         const orphanIds = questionIds.filter((id) => !stillUsed.has(id));
 
         if (orphanIds.length > 0) {
-          // gỡ FK feedback.questionId trước khi xoá question
           await this.feedbackModel.update(
             { questionId: null },
             { where: { questionId: { [Op.in]: orphanIds } }, transaction: t },
           );
 
-          await this.choiceModel.destroy({
-            where: { questionId: { [Op.in]: orphanIds } },
-            transaction: t,
-          });
-          await this.questionModel.destroy({
-            where: { id: { [Op.in]: orphanIds } },
-            transaction: t,
-          });
+          await this.choiceModel.destroy({ where: { questionId: { [Op.in]: orphanIds } }, transaction: t });
+          await this.questionModel.destroy({ where: { id: { [Op.in]: orphanIds } }, transaction: t });
         }
       }
     });
@@ -257,7 +290,6 @@ export class TestsService {
       .filter(Boolean)
       .map((q) => {
         const qq = q!.toJSON() as any;
-        // đảm bảo FE đọc được: questionChoices
         const choices = (qq.questionChoices || qq.questionchoices || []).map((c: any) => ({
           id: c.id,
           choiceText: c.choiceText,

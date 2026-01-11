@@ -1,4 +1,4 @@
-import { IsOptional, IsString } from 'class-validator';
+import { IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class UpdateQuestionDto {
   @IsOptional()
@@ -20,4 +20,14 @@ export class UpdateQuestionDto {
   @IsOptional()
   @IsString()
   difficulty?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  imageUrl?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  imageAlt?: string | null;
 }

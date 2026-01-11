@@ -1,12 +1,15 @@
-import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Max, Min } from "class-validator";
+import { Type } from "class-transformer";
 
 export class AiGenerateTestDto {
   @IsOptional()
   @IsString()
-  // SAT | HSA | auto
-  @IsIn(['SAT', 'HSA', 'auto'])
-  exam?: 'SAT' | 'HSA' | 'auto';
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(["SAT", "HSA", "auto"])
+  exam?: "SAT" | "HSA" | "auto";
 
   @IsOptional()
   @Type(() => Number)
@@ -21,4 +24,9 @@ export class AiGenerateTestDto {
   @Min(600)
   @Max(7200)
   durationSec?: number;
+
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  isPublic?: boolean;
 }

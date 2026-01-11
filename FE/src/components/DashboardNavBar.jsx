@@ -1,4 +1,3 @@
-
 import React, { useState } from "react";
 import { NavLink, Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider.jsx";
@@ -9,18 +8,20 @@ export default function DashboardNavbar() {
   const [open, setOpen] = useState(false);
 
   const links = [
-    { to: "/dashboard",  label: "Màn hình chính" },
-    { to: "/tests",      label: "Bài thi" },
+    { to: "/dashboard", label: "Màn hình chính" },
+    { to: "/tests", label: "Luyện theo đề thi" },
+    { to: "/practice", label: "Luyện theo kỹ năng" },
     { to: "/tro-ly-hoc-tap", label: "Trợ lý học tập" },
-    { to: "/history",    label: "Lịch sử làm bài" } ,
-    { to: "/stats",      label: "Thống kê" },
-    { to: "/feedback",   label: "Phản hồi" },
+    { to: "/history", label: "Lịch sử làm bài" },
+    { to: "/stats", label: "Thống kê" },
+    { to: "/feedback", label: "Phản hồi" },
   ];
 
   const activeCls = ({ isActive }) =>
     `px-3 py-2 rounded-md text-sm transition ${
-      isActive ? "bg-white/15 text-white"
-               : "text-white/90 hover:bg-white/10 hover:text-white"
+      isActive
+        ? "bg-white/15 text-white"
+        : "text-white/90 hover:bg-white/10 hover:text-white"
     }`;
 
   const handleLogout = async () => {
@@ -31,12 +32,10 @@ export default function DashboardNavbar() {
   return (
     <header className="sticky top-0 z-40 bg-green-700 text-white border-b border-green-800/70">
       <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-        {/* Brand */}
         <Link to="/dashboard" className="font-semibold tracking-tight">
-          Hệ thống đề thi HSA
+          Hệ thống đề thi HSA/SAT
         </Link>
 
-        {/* Nav links (desktop) */}
         <nav className="hidden md:flex items-center gap-2">
           {links.map((l) =>
             l.disabled ? (
@@ -52,7 +51,6 @@ export default function DashboardNavbar() {
                 key={l.to}
                 to={l.to}
                 className={activeCls}
-                // Dashboard cần end để không bị active trên các path con
                 end={l.to === "/dashboard"}
               >
                 {l.label}
@@ -61,7 +59,6 @@ export default function DashboardNavbar() {
           )}
         </nav>
 
-        {/* User menu */}
         <div className="relative">
           <button
             onClick={() => setOpen((v) => !v)}
@@ -111,7 +108,6 @@ export default function DashboardNavbar() {
         </div>
       </div>
 
-      {/* Nav (mobile) */}
       <div className="md:hidden border-t border-green-800/70">
         <div className="max-w-7xl mx-auto px-2 py-2 flex flex-wrap gap-1">
           {links.map((l) =>

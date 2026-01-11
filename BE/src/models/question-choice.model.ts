@@ -25,6 +25,10 @@ export class QuestionChoice extends Model<QuestionChoice> {
   @Column(DataType.TEXT)
   declare choiceText: string;
 
+  @AllowNull(true)
+  @Column(DataType.TEXT)
+  declare choiceExplanation: string | null;
+
   @AllowNull(false)
   @Default(false)
   @Column(DataType.BOOLEAN)
