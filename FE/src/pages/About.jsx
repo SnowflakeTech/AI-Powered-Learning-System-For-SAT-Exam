@@ -19,7 +19,7 @@ export default function About() {
           <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="md:col-span-2 rounded-2xl border border-neutral-200 p-5">
               <div className="text-sm font-semibold text-neutral-900">Tác giả</div>
-              <div className="mt-1 text-lg font-bold text-neutral-900">Phạm Sơn</div>
+              <div className="mt-1 text-lg font-bold text-neutral-900">Phạm Sơn & Lê Quốc Anh</div>
               <div className="mt-3 space-y-2 text-neutral-700">
                 <p>
                   Dự án hướng tới trải nghiệm luyện thi đơn giản, rõ ràng: chọn đề – làm bài –

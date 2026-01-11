@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import DashboardNavbar from "../components/DashboardNavBar.jsx";
 import { apiGet, apiPost } from "../lib/apiClient.js";
-import MathText from "../components/MathText.jsx";
+import MathContent from "../components/MathContent.jsx";
+import { useLanguage } from "../routes/LanguageProvider.jsx";
 
 const FILE_BASE =
   import.meta.env.VITE_FILE_BASE_URL ||
@@ -39,6 +40,7 @@ function normalizeQuestions(rawList) {
 export default function Exam() {
   const { id } = useParams();
   const nav = useNavigate();
+  const { lang } = useLanguage();
 
   const [test, setTest] = useState(null);
   const [questions, setQuestions] = useState([]);
@@ -48,6 +50,10 @@ export default function Exam() {
 
   const [submitting, setSubmitting] = useState(false);
   const [submitErr, setSubmitErr] = useState("");
+
+  const [tLoading, setTLoading] = useState(false);
+  const [tErr, setTErr] = useState("");
+  const [tMap, setTMap] = useState({});
 
   const durationSec = test?.durationSec ?? 60 * 60;
   const [left, setLeft] = useState(durationSec);
@@ -92,6 +98,68 @@ export default function Exam() {
     load();
   }, [id]);
 
+  useEffect(() => {
+    const run = async () => {
+      setTErr("");
+      setTMap({});
+      if (lang === "vi") return;
+      if (!questions.length) return;
+
+      setTLoading(true);
+      try {
+        const payload = {
+          targetLang: lang,
+          questions: questions.map((q) => ({
+            id: q.id,
+            content: q.content || "",
+            imageAlt: q.imageAlt || null,
+            choices: (q.questionChoices || [])
+              .slice()
+              .sort((a, b) => (a.choiceOrder ?? 0) - (b.choiceOrder ?? 0))
+              .map((c) => c.choiceText),
+          })),
+        };
+
+        const res = await apiPost("/ai/translate-questions", payload);
+        const root = res?.data ?? res;
+        const inner = root?.data ?? root;
+        setTMap(inner?.translations || {});
+      } catch (e) {
+        setTErr(e?.message || "Dịch thất bại");
+      } finally {
+        setTLoading(false);
+      }
+    };
+    run();
+  }, [lang, questions]);
+
+  const viewQuestions = useMemo(() => {
+    if (lang === "vi") return questions;
+
+    return questions.map((q) => {
+      const tr = tMap?.[String(q.id)] || null;
+      if (!tr) return q;
+
+      const sortedChoices = (q.questionChoices || [])
+        .slice()
+        .sort((a, b) => (a.choiceOrder ?? 0) - (b.choiceOrder ?? 0));
+
+      const translatedChoices = Array.isArray(tr.choices) ? tr.choices : [];
+
+      const nextChoices = sortedChoices.map((c, idx) => ({
+        ...c,
+        choiceText: translatedChoices[idx] ?? c.choiceText,
+      }));
+
+      return {
+        ...q,
+        content: tr.content ?? q.content,
+        imageAlt: tr.imageAlt ?? q.imageAlt,
+        questionChoices: nextChoices,
+      };
+    });
+  }, [questions, lang, tMap]);
+
   const score = useMemo(() => {
     let correct = 0;
     for (const q of questions) {
@@ -120,16 +188,11 @@ export default function Exam() {
       const attempt = payload?.data ?? payload;
 
       alert(
-        `Đã nộp bài${auto ? " (tự động hết giờ)" : ""}: ${
-          attempt?.correct ?? score.correct
-        }/${attempt?.totalQuestions ?? score.total} đúng • Điểm ${
-          attempt?.score ?? 0
-        }/${attempt?.totalScore ?? 800}`
+        `Đã nộp bài${auto ? " (tự động hết giờ)" : ""}: ${attempt?.correct ?? score.correct}/${attempt?.totalQuestions ?? score.total} đúng • Điểm ${attempt?.score ?? 0}/${attempt?.totalScore ?? 800}`
       );
 
       const key =
-        attempt?.id ||
-        (attempt?.attemptId ? `attempt-${attempt.attemptId}` : null);
+        attempt?.id || (attempt?.attemptId ? `attempt-${attempt.attemptId}` : null);
       if (key) nav(`/history/${key}`);
       else nav("/history");
     } catch (e) {
@@ -152,9 +215,7 @@ export default function Exam() {
     return (
       <div className="min-h-screen bg-neutral-50">
         <DashboardNavbar />
-        <div className="max-w-4xl mx-auto p-6 text-neutral-600">
-          Đang tải đề...
-        </div>
+        <div className="max-w-4xl mx-auto p-6 text-neutral-600">Đang tải đề...</div>
       </div>
     );
   }
@@ -164,9 +225,7 @@ export default function Exam() {
       <div className="min-h-screen bg-neutral-50">
         <DashboardNavbar />
         <div className="max-w-4xl mx-auto p-6">
-          <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-700">
-            {err}
-          </div>
+          <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-700">{err}</div>
           <button
             onClick={() => nav("/tests")}
             className="mt-4 px-4 py-2 rounded-xl bg-neutral-900 text-white"
@@ -183,17 +242,10 @@ export default function Exam() {
       <div className="min-h-screen bg-neutral-50">
         <DashboardNavbar />
         <div className="max-w-5xl mx-auto p-6">
-          <h1 className="text-2xl font-semibold">
-            {test?.title || `Test #${id}`}
-          </h1>
-          <p className="text-sm text-neutral-600 mt-1">
-            Mode: {test?.mode} • {questions.length} câu
-          </p>
-
+          <h1 className="text-2xl font-semibold">{test?.title || `Test #${id}`}</h1>
           <div className="mt-6 p-4 rounded-2xl bg-yellow-50 border border-yellow-200 text-yellow-800">
             Đề này hiện chưa load được câu hỏi.
           </div>
-
           <button
             onClick={() => nav("/tests")}
             className="mt-4 px-4 py-2 rounded-xl bg-neutral-900 text-white"
@@ -211,12 +263,15 @@ export default function Exam() {
       <div className="max-w-5xl mx-auto p-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold">
-              {test?.title || `Test #${id}`}
-            </h1>
+            <h1 className="text-2xl font-semibold">{test?.title || `Test #${id}`}</h1>
             <p className="text-sm text-neutral-600 mt-1">
-              Mode: {test?.mode} • {questions.length} câu
+              Mode: {test?.mode} • {viewQuestions.length} câu
             </p>
+            {lang !== "vi" ? (
+              <div className="mt-2 text-xs text-neutral-500">
+                {tLoading ? "Đang dịch..." : tErr ? tErr : "Đang xem bản dịch"}
+              </div>
+            ) : null}
           </div>
 
           <div className="flex items-center gap-3">
@@ -227,29 +282,21 @@ export default function Exam() {
             <button
               onClick={() => submit(false)}
               disabled={submitting}
-              className={
-                "px-4 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-500 " +
-                (submitting ? "opacity-60 cursor-not-allowed" : "")
-              }
+              className={"px-4 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-500 " + (submitting ? "opacity-60 cursor-not-allowed" : "")}
             >
               {submitting ? "Đang nộp..." : "Nộp bài"}
             </button>
-            {submitErr ? (
-              <div className="mt-2 text-xs text-red-600">{submitErr}</div>
-            ) : null}
+            {submitErr ? <div className="mt-2 text-xs text-red-600">{submitErr}</div> : null}
           </div>
         </div>
 
         <div className="mt-6 space-y-4">
-          {questions.map((q, idx) => (
-            <div
-              key={q.id}
-              className="bg-white rounded-2xl border border-neutral-200 p-5"
-            >
+          {viewQuestions.map((q, idx) => (
+            <div key={q.id} className="bg-white rounded-2xl border border-neutral-200 p-5">
               <div className="font-medium">
                 Câu {idx + 1}:
                 <div className="mt-1 text-neutral-800">
-                  <MathText text={q.content} />
+                  <MathContent content={q.content} />
                 </div>
               </div>
 
@@ -262,9 +309,7 @@ export default function Exam() {
                     loading="lazy"
                   />
                   {q.imageAlt ? (
-                    <div className="mt-1 text-xs text-neutral-500">
-                      {q.imageAlt}
-                    </div>
+                    <div className="mt-1 text-xs text-neutral-500">{q.imageAlt}</div>
                   ) : null}
                 </div>
               ) : null}
@@ -278,9 +323,7 @@ export default function Exam() {
                       key={c.id}
                       className={
                         "flex items-start gap-3 p-3 rounded-xl border cursor-pointer " +
-                        (answers[q.id] === c.id
-                          ? "border-indigo-400 bg-indigo-50"
-                          : "border-neutral-200")
+                        (answers[q.id] === c.id ? "border-indigo-400 bg-indigo-50" : "border-neutral-200")
                       }
                     >
                       <input
@@ -288,16 +331,12 @@ export default function Exam() {
                         name={`q-${q.id}`}
                         className="mt-1"
                         checked={answers[q.id] === c.id}
-                        onChange={() =>
-                          setAnswers((prev) => ({ ...prev, [q.id]: c.id }))
-                        }
+                        onChange={() => setAnswers((prev) => ({ ...prev, [q.id]: c.id }))}
                       />
                       <div>
-                        <div className="text-sm font-semibold">
-                          {String.fromCharCode(65 + i)}.
-                        </div>
+                        <div className="text-sm font-semibold">{String.fromCharCode(65 + i)}.</div>
                         <div className="text-sm text-neutral-800">
-                          <MathText text={c.choiceText} />
+                          <MathContent content={c.choiceText} />
                         </div>
                       </div>
                     </label>
@@ -308,8 +347,7 @@ export default function Exam() {
         </div>
 
         <div className="mt-6 text-sm text-neutral-600">
-          Đã chọn {Object.keys(answers).length}/{questions.length} câu • Đúng hiện
-          tại: {score.correct}
+          Đã chọn {Object.keys(answers).length}/{questions.length} câu • Đúng hiện tại: {score.correct}
         </div>
       </div>
     </div>

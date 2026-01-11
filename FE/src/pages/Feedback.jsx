@@ -1,6 +1,5 @@
-// src/pages/Feedback.jsx
-import React, { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import DashboardNavbar from "../components/DashboardNavBar.jsx";
 import { apiGet, apiPost } from "../lib/apiClient.js";
 import { useAuth } from "../auth/AuthProvider.jsx";
@@ -20,7 +19,6 @@ const PRIORITY_OPTIONS = [
 ];
 
 function unwrap(payload) {
-  // BE chuẩn: { success, data }
   return payload?.data ?? payload;
 }
 
@@ -28,11 +26,20 @@ function toMaybeNumber(v) {
   const t = String(v ?? "").trim();
   if (!t) return undefined;
   const n = Number(t);
-  return Number.isFinite(n) ? n : t; // attemptId có thể là string kiểu attempt-1
+  return Number.isFinite(n) ? n : t;
+}
+
+function isValidType(v) {
+  return TYPE_OPTIONS.some((x) => x.value === v);
+}
+
+function isValidPriority(v) {
+  return PRIORITY_OPTIONS.some((x) => x.value === v);
 }
 
 export default function Feedback() {
   const nav = useNavigate();
+  const { search } = useLocation();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
 
@@ -44,6 +51,9 @@ export default function Feedback() {
     questionId: "",
     attemptId: "",
   });
+
+  const messageRef = useRef(null);
+  const hydratedRef = useRef(false);
 
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
@@ -64,7 +74,9 @@ export default function Feedback() {
     setErr("");
     setLoading(true);
     try {
-      const endpoint = isAdmin ? `/feedback?page=${p}&limit=${limit}` : `/feedback/me?page=${p}&limit=${limit}`;
+      const endpoint = isAdmin
+        ? `/feedback?page=${p}&limit=${limit}`
+        : `/feedback/me?page=${p}&limit=${limit}`;
       const res = await apiGet(endpoint);
       const data = unwrap(res);
       setItems(data?.items || []);
@@ -83,6 +95,49 @@ export default function Feedback() {
     fetchMine(page);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, isAdmin]);
+
+  useEffect(() => {
+    if (hydratedRef.current) return;
+    hydratedRef.current = true;
+
+    const sp = new URLSearchParams(search);
+
+    const type = sp.get("type");
+    const priority = sp.get("priority");
+    const message = sp.get("message");
+    const testId = sp.get("testId");
+    const questionId = sp.get("questionId");
+    const attemptId = sp.get("attemptId");
+
+    const next = {
+      type: isValidType(type) ? type : form.type,
+      priority: isValidPriority(priority) ? priority : form.priority,
+      message: message ? String(message) : form.message,
+      testId: testId ? String(testId) : form.testId,
+      questionId: questionId ? String(questionId) : form.questionId,
+      attemptId: attemptId ? String(attemptId) : form.attemptId,
+    };
+
+    const changed =
+      next.type !== form.type ||
+      next.priority !== form.priority ||
+      next.message !== form.message ||
+      next.testId !== form.testId ||
+      next.questionId !== form.questionId ||
+      next.attemptId !== form.attemptId;
+
+    if (changed) {
+      setForm(next);
+      setOk("");
+      setErr("");
+      setTimeout(() => {
+        if (messageRef.current && typeof messageRef.current.focus === "function") {
+          messageRef.current.focus();
+        }
+      }, 0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
 
   const onChange = (k) => (e) => {
     setForm((prev) => ({ ...prev, [k]: e.target.value }));
@@ -108,7 +163,6 @@ export default function Feedback() {
         questionId: toMaybeNumber(form.questionId),
         attemptId: toMaybeNumber(form.attemptId),
       };
-      // remove undefined
       Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k]);
 
       await apiPost("/feedback", payload);
@@ -126,6 +180,14 @@ export default function Feedback() {
     }
   };
 
+  const hasPrefill = useMemo(() => {
+    return Boolean(
+      String(form.testId || "").trim() ||
+        String(form.questionId || "").trim() ||
+        String(form.attemptId || "").trim()
+    );
+  }, [form.testId, form.questionId, form.attemptId]);
+
   return (
     <div className="min-h-screen bg-neutral-50 text-neutral-900">
       <DashboardNavbar />
@@ -137,8 +199,13 @@ export default function Feedback() {
           </p>
         </div>
 
+        {hasPrefill ? (
+          <div className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-800 text-sm">
+            Đã điền sẵn thông tin từ trang Lịch sử. Bạn chỉ cần mô tả chi tiết và bấm gửi.
+          </div>
+        ) : null}
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* FORM */}
           <section className="bg-neutral-50 border border-neutral-200 rounded-2xl p-6 shadow-sm">
             <h2 className="text-lg font-semibold mb-4">Gửi feedback</h2>
 
@@ -178,10 +245,11 @@ export default function Feedback() {
               <label className="block">
                 <span className="block text-sm font-medium mb-1">Nội dung</span>
                 <textarea
-                  rows={5}
+                  ref={messageRef}
+                  rows={6}
                   value={form.message}
                   onChange={onChange("message")}
-                  placeholder="Ví dụ: Đề SAT - Câu 3 sai đáp án (đúng phải là 15). Hoặc: Timer bị đứng khi chuyển câu..."
+                  placeholder="Ví dụ: Câu 3 sai đáp án (đúng phải là 15). Hoặc: Timer bị đứng khi chuyển câu... Mô tả cách bạn gặp lỗi."
                   className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 outline-none focus:ring-2 focus:ring-emerald-200"
                 />
               </label>
@@ -210,7 +278,7 @@ export default function Feedback() {
                   <input
                     value={form.attemptId}
                     onChange={onChange("attemptId")}
-                    placeholder="vd: 5"
+                    placeholder="vd: attempt-12 hoặc 12"
                     className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 outline-none focus:ring-2 focus:ring-emerald-200"
                   />
                 </label>
@@ -233,12 +301,11 @@ export default function Feedback() {
               </button>
 
               <div className="text-xs text-neutral-600">
-                Gợi ý: nếu đang ở trang Lịch sử, bạn có thể lấy <b>attemptId</b> để report nhanh.
+                Gợi ý: nếu đang ở trang Lịch sử, bạn có thể bấm nút “Báo lỗi” để tự điền attemptId nhanh.
               </div>
             </form>
           </section>
 
-          {/* LIST */}
           <section className="bg-white border border-neutral-200 rounded-2xl p-6 shadow-sm">
             <div className="flex items-center justify-between gap-3 mb-4">
               <h2 className="text-lg font-semibold">{isAdmin ? "Tất cả feedback" : "Feedback của mình"}</h2>

@@ -29,7 +29,7 @@ export default function Navbar() {
               Hệ thống đề thi HSA/SAT
             </div>
             <div className="hidden sm:block text-xs text-white/80 truncate">
-              Tác giả: Phạm Sơn
+              Tác giả: Phạm Sơn - Lê Quốc Anh
             </div>
           </div>
         </Link>

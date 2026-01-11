@@ -3,6 +3,7 @@ import DashboardNavBar from "../components/DashboardNavBar.jsx";
 import { apiGet, apiPost } from "../lib/apiClient.js";
 import { useLocation, useNavigate } from "react-router-dom";
 import MathContent from "../components/MathContent.jsx";
+import { useLanguage } from "../routes/LanguageProvider.jsx";
 
 function useQuery() {
   const { search } = useLocation();
@@ -20,6 +21,7 @@ function getApiHost() {
 export default function PracticeSession() {
   const q = useQuery();
   const navigate = useNavigate();
+  const { lang } = useLanguage();
 
   const exam = q.get("exam") || "SAT";
   const section = q.get("section") || "";
@@ -39,22 +41,31 @@ export default function PracticeSession() {
   const [explanations, setExplanations] = useState({});
   const [aiSummary, setAiSummary] = useState(null);
 
+  const [tLoading, setTLoading] = useState(false);
+  const [tErr, setTErr] = useState("");
+  const [tMap, setTMap] = useState({});
+
   async function load() {
     try {
       setErr("");
       setLoading(true);
+
       setAiErr("");
       setExplanations({});
       setAiSummary(null);
       setSubmitted(false);
       setAnswers({});
 
+      setTErr("");
+      setTMap({});
+
       const sp = new URLSearchParams();
       if (ids) {
         sp.set("ids", ids);
         const res = await apiGet(`/question/by-ids?${sp.toString()}`);
-        const rows = res?.data || res;
-        setQuestions(Array.isArray(rows) ? rows : []);
+        const root = res?.data ?? res;
+        const inner = root?.data ?? root;
+        setQuestions(Array.isArray(inner) ? inner : Array.isArray(root) ? root : []);
         return;
       }
 
@@ -65,8 +76,9 @@ export default function PracticeSession() {
       if (limit) sp.set("limit", limit);
 
       const res = await apiGet(`/question/practice?${sp.toString()}`);
-      const rows = res?.data || res;
-      setQuestions(Array.isArray(rows) ? rows : []);
+      const root = res?.data ?? res;
+      const inner = root?.data ?? root;
+      setQuestions(Array.isArray(inner) ? inner : Array.isArray(root) ? root : []);
     } catch (e) {
       setQuestions([]);
       setErr(e?.message || "Error");
@@ -78,6 +90,58 @@ export default function PracticeSession() {
   useEffect(() => {
     load();
   }, [exam, section, skill, difficulty, limit, ids]);
+
+  useEffect(() => {
+    const run = async () => {
+      setTErr("");
+      setTMap({});
+      if (lang === "vi") return;
+      if (!questions.length) return;
+
+      setTLoading(true);
+      try {
+        const payload = {
+          targetLang: lang,
+          questions: questions.map((qq) => ({
+            id: qq.id,
+            content: qq.content || "",
+            imageAlt: qq.imageAlt || null,
+            choices: (qq.choices || []).map((c) => c.text),
+          })),
+        };
+
+        const res = await apiPost("/ai/translate-questions", payload);
+        const root = res?.data ?? res;
+        const inner = root?.data ?? root;
+        setTMap(inner?.translations || {});
+      } catch (e) {
+        setTErr(e?.message || "Dịch thất bại");
+      } finally {
+        setTLoading(false);
+      }
+    };
+    run();
+  }, [lang, questions]);
+
+  const viewQuestions = useMemo(() => {
+    if (lang === "vi") return questions;
+
+    return questions.map((qq) => {
+      const tr = tMap?.[String(qq.id)] || null;
+      if (!tr) return qq;
+      const translatedChoices = Array.isArray(tr.choices) ? tr.choices : [];
+      const nextChoices = (qq.choices || []).map((c, idx) => ({
+        ...c,
+        text: translatedChoices[idx] ?? c.text,
+      }));
+      return {
+        ...qq,
+        content: tr.content ?? qq.content,
+        imageAlt: tr.imageAlt ?? qq.imageAlt,
+        choices: nextChoices,
+      };
+    });
+  }, [questions, lang, tMap]);
 
   function choose(questionId, choiceId) {
     if (submitted) return;
@@ -97,9 +161,12 @@ export default function PracticeSession() {
 
   async function submit() {
     if (submitted) return;
+
     setSubmitted(true);
     setAiErr("");
     setAiLoading(true);
+    setExplanations({});
+    setAiSummary(null);
 
     try {
       const payload = questions.map((qq) => {
@@ -113,7 +180,7 @@ export default function PracticeSession() {
           pickedIdx >= 0 ? String.fromCharCode(65 + pickedIdx) : null;
 
         return {
-          questionId: qq.id,
+          questionId: String(qq.id),
           content: qq.content,
           choices: (qq.choices || []).map((c, i) => ({
             label: String.fromCharCode(65 + i),
@@ -132,8 +199,9 @@ export default function PracticeSession() {
         questions: payload,
       });
 
-      const explainData = explainRes?.data || explainRes;
-      const exp = explainData?.explanations || {};
+      const explainRoot = explainRes?.data ?? explainRes;
+      const explainInner = explainRoot?.data ?? explainRoot;
+      const exp = explainInner?.explanations || {};
       setExplanations(exp);
 
       const summaryRes = await apiPost("/ai/practice-summary", {
@@ -149,13 +217,12 @@ export default function PracticeSession() {
           correct: x.picked
             ? String(x.picked).toUpperCase() === String(x.correct).toUpperCase()
             : false,
-          picked: x.picked,
-          correctLabel: x.correct,
         })),
       });
 
-      const summaryData = summaryRes?.data || summaryRes;
-      setAiSummary(summaryData || null);
+      const summaryRoot = summaryRes?.data ?? summaryRes;
+      const summaryInner = summaryRoot?.data ?? summaryRoot;
+      setAiSummary(summaryInner || null);
     } catch (e) {
       setAiErr(e?.message || "AI error");
     } finally {
@@ -175,8 +242,13 @@ export default function PracticeSession() {
           <div>
             <h1 className="text-2xl font-semibold">Luyện theo kỹ năng</h1>
             <div className="mt-1 text-sm text-neutral-600">
-              {exam} • {questions.length} câu
+              {exam} • {viewQuestions.length} câu
             </div>
+            {lang !== "vi" ? (
+              <div className="mt-2 text-xs text-neutral-500">
+                {tLoading ? "Đang dịch..." : tErr ? tErr : "Đang xem bản dịch"}
+              </div>
+            ) : null}
           </div>
 
           <div className="flex items-center gap-2">
@@ -224,15 +296,11 @@ export default function PracticeSession() {
 
         <div className="mt-6 space-y-4">
           {loading ? (
-            <div className="rounded-2xl border border-neutral-200 bg-white p-6">
-              Đang tải...
-            </div>
-          ) : questions.length === 0 ? (
-            <div className="rounded-2xl border border-neutral-200 bg-white p-6">
-              Không có câu hỏi phù hợp.
-            </div>
+            <div className="rounded-2xl border border-neutral-200 bg-white p-6">Đang tải...</div>
+          ) : viewQuestions.length === 0 ? (
+            <div className="rounded-2xl border border-neutral-200 bg-white p-6">Không có câu hỏi phù hợp.</div>
           ) : (
-            questions.map((qq, idx) => {
+            viewQuestions.map((qq, idx) => {
               const picked = answers[qq.id];
               const correct = (qq.choices || []).find((c) => c.isCorrect);
 
@@ -240,10 +308,7 @@ export default function PracticeSession() {
               const exp = explanations?.[key];
 
               return (
-                <div
-                  key={qq.id}
-                  className="rounded-2xl border border-neutral-200 bg-white p-6"
-                >
+                <div key={qq.id} className="rounded-2xl border border-neutral-200 bg-white p-6">
                   <div className="text-sm text-neutral-600">
                     Câu {idx + 1} • {qq.section} • {qq.skill} • {qq.difficulty}
                   </div>
@@ -268,8 +333,7 @@ export default function PracticeSession() {
                     {(qq.choices || []).map((c, i) => {
                       const isPicked = picked === c.id;
                       const isCorrect = submitted && correct && c.id === correct.id;
-                      const isWrongPicked =
-                        submitted && isPicked && correct && c.id !== correct.id;
+                      const isWrongPicked = submitted && isPicked && correct && c.id !== correct.id;
 
                       return (
                         <button
@@ -282,9 +346,7 @@ export default function PracticeSession() {
                             isWrongPicked ? "bg-red-50 border-red-200" : "",
                           ].join(" ")}
                         >
-                          <div className="font-semibold">
-                            {String.fromCharCode(65 + i)}.
-                          </div>
+                          <div className="font-semibold">{String.fromCharCode(65 + i)}.</div>
                           <div className="mt-1 text-neutral-900">
                             <MathContent content={c.text} />
                           </div>
@@ -297,13 +359,9 @@ export default function PracticeSession() {
                     <div className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm">
                       <div className="font-semibold">Giải đáp</div>
                       <div className="mt-1">
-                        {aiLoading && !exp
-                          ? "Đang tạo giải đáp..."
-                          : exp?.explanation || "Chưa có giải đáp."}
+                        {aiLoading && !exp ? "Đang tạo giải đáp..." : exp?.explanation || "Chưa có giải đáp."}
                       </div>
-                      {exp?.note ? (
-                        <div className="mt-2 text-neutral-600">{exp.note}</div>
-                      ) : null}
+                      {exp?.note ? <div className="mt-2 text-neutral-600">{exp.note}</div> : null}
                     </div>
                   ) : null}
                 </div>
@@ -316,9 +374,7 @@ export default function PracticeSession() {
           <div className="mt-6 rounded-2xl border border-neutral-200 bg-white p-6">
             <div className="text-lg font-semibold">Đánh giá năng lực</div>
             {aiLoading && !aiSummary ? (
-              <div className="mt-2 text-sm text-neutral-600">
-                Đang tạo đánh giá...
-              </div>
+              <div className="mt-2 text-sm text-neutral-600">Đang tạo đánh giá...</div>
             ) : aiSummary ? (
               <div className="mt-3 space-y-3">
                 <div>{aiSummary.summary}</div>
@@ -326,12 +382,10 @@ export default function PracticeSession() {
                   <span className="font-semibold">Mức:</span> {aiSummary.level}
                 </div>
                 <div className="text-sm">
-                  <span className="font-semibold">Điểm mạnh:</span>{" "}
-                  {(aiSummary.strengths || []).join(", ") || "Chưa rõ"}
+                  <span className="font-semibold">Điểm mạnh:</span> {(aiSummary.strengths || []).join(", ") || "Chưa rõ"}
                 </div>
                 <div className="text-sm">
-                  <span className="font-semibold">Điểm yếu:</span>{" "}
-                  {(aiSummary.weaknesses || []).join(", ") || "Chưa rõ"}
+                  <span className="font-semibold">Điểm yếu:</span> {(aiSummary.weaknesses || []).join(", ") || "Chưa rõ"}
                 </div>
                 <div className="text-sm">
                   <div className="font-semibold">Kế hoạch gợi ý</div>

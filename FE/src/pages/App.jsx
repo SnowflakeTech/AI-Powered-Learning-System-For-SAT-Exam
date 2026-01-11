@@ -1,4 +1,3 @@
-// src/pages/App.jsx
 import React from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 
@@ -21,6 +20,7 @@ import AdminTestEditor from "./AdminTestEditor.jsx";
 import Practice from "./Practice.jsx";
 import PracticeSession from "./PracticeSession.jsx";
 import About from "./About.jsx";
+import TraCuu from "./TraCuu.jsx";
 
 import ProtectedRoute from "../routes/ProtectedRoute.jsx";
 import AdminRoute from "../routes/AdminRoute.jsx";
@@ -33,6 +33,7 @@ export default function App() {
       <Route path="/register" element={<Register />} />
       <Route path="/huong-dan" element={<Guide />} />
       <Route path="/ve-chung-toi" element={<About />} />
+      <Route path="/tra-cuu" element={<TraCuu />} />
 
       <Route
         path="/dashboard"
@@ -114,7 +115,6 @@ export default function App() {
           </ProtectedRoute>
         }
       />
-
       <Route
         path="/feedback/:id"
         element={
@@ -141,7 +141,6 @@ export default function App() {
           </ProtectedRoute>
         }
       />
-
       <Route
         path="/history/:attemptId"
         element={

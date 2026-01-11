@@ -16,6 +16,9 @@ import { AssistantModule } from "./assistant/assistant.module";
 import { AiModule } from "./ai/ai.module";
 import { HistoryModule } from "./history/history.module";
 import { FeedbackModule } from "./feedback/feedback.module";
+import { UploadModule } from "./upload/upload.module";
+import { LookupModule } from "./lookup/lookup.module";
+import { AppController } from "./app.controller";
 
 import { Passage } from "./models/passage.model";
 import { User } from "./models/user.model";
@@ -29,8 +32,6 @@ import { Feedback } from "./models/feedback.model";
 import { AiConversation } from "./models/ai-conversation.model";
 import { AiMessage } from "./models/ai-message.model";
 import { TestAssignment } from "./models/test-assignment.model";
-import { UploadModule } from "./upload/upload.module";
-import { AppController } from "./app.controller";
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { AppController } from "./app.controller";
       serveRoot: "/uploads",
     }),
     UploadModule,
+
     SequelizeModule.forRoot({
       dialect: "mysql",
       host: process.env.DB_HOST || "localhost",
@@ -77,6 +79,7 @@ import { AppController } from "./app.controller";
     AiModule,
     HistoryModule,
     FeedbackModule,
+    LookupModule,
   ],
   controllers: [AppController],
   providers: [

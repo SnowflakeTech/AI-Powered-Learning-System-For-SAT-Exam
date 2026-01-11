@@ -51,9 +51,7 @@ function imageInterceptor() {
     }),
     limits: { fileSize: 5 * 1024 * 1024 },
     fileFilter: (_req, file, cb) => {
-      const okType = ["image/png", "image/jpeg", "image/webp"].includes(
-        file.mimetype
-      );
+      const okType = ["image/png", "image/jpeg", "image/webp"].includes(file.mimetype);
       cb(okType ? null : new BadRequestException("Invalid image type"), okType);
     },
   });
@@ -69,18 +67,12 @@ export class QuestionsController {
 
   @Get("all")
   async all(@Query("page") page?: string, @Query("limit") limit?: string) {
-    const rows = await this.questionsService.listAll(
-      Number(page),
-      Number(limit)
-    );
+    const rows = await this.questionsService.listAll(Number(page), Number(limit));
     return ok(rows);
   }
 
   @Get("stats")
-  async stats(
-    @Query("section") section?: string,
-    @Query("skill") skill?: string
-  ) {
+  async stats(@Query("section") section?: string, @Query("skill") skill?: string) {
     const rows = await this.questionsService.statsBySkillDifficulty({
       section: section?.trim() || undefined,
       skill: skill?.trim() || undefined,
@@ -97,20 +89,14 @@ export class QuestionsController {
 
   @Roles("admin")
   @Patch(":id")
-  async updateQuestion(
-    @Param("id", ParseIntPipe) id: number,
-    @Body() dto: UpdateQuestionDto
-  ) {
+  async updateQuestion(@Param("id", ParseIntPipe) id: number, @Body() dto: UpdateQuestionDto) {
     const q = await this.questionsService.updateQuestion(id, dto);
     return ok(q, "Updated");
   }
 
   @Roles("admin")
   @Put(":id/choices")
-  async updateChoices(
-    @Param("id", ParseIntPipe) id: number,
-    @Body() dto: UpdateChoicesDto
-  ) {
+  async updateChoices(@Param("id", ParseIntPipe) id: number, @Body() dto: UpdateChoicesDto) {
     const q = await this.questionsService.updateChoices(id, dto);
     return ok(q, "Updated");
   }
@@ -134,10 +120,7 @@ export class QuestionsController {
   @Roles("admin")
   @Post(":id/image")
   @UseInterceptors(imageInterceptor())
-  async uploadQuestionImage(
-    @Param("id", ParseIntPipe) id: number,
-    @UploadedFile() file?: Express.Multer.File
-  ) {
+  async uploadQuestionImage(@Param("id", ParseIntPipe) id: number, @UploadedFile() file?: Express.Multer.File) {
     if (!file) throw new BadRequestException("Missing file");
 
     const q = await this.questionModel.findByPk(id);
@@ -184,16 +167,7 @@ export class QuestionsController {
       skill: body?.skill,
       difficulty: body?.difficulty,
     };
-    const data = await this.aiService.generateQuestions(
-      req.user.id,
-      dto as any
-    );
+    const data = await this.aiService.generateQuestions(req.user.id, dto as any);
     return ok(data);
-  }
-
-  @Get("by-ids")
-  async byIdsAlt(@Query("ids") ids?: string) {
-    const rows = await this.questionsService.findByIds(ids);
-    return ok(rows);
   }
 }

@@ -6,6 +6,7 @@ import { AiGenerateTestDto } from "./dto/generate-test.dto";
 import { AiGenerateQuestionsDto } from "./dto/generate-questions.dto";
 import { AiExplainQuestionsDto } from "./dto/explain-questions.dto";
 import { AiPracticeSummaryDto } from "./dto/practice-summary.dto";
+import { AiTranslateQuestionsDto } from "./dto/translate-questions.dto";
 
 @Controller("ai")
 export class AiController {
@@ -44,6 +45,12 @@ export class AiController {
   @Post("practice-summary")
   async practiceSummary(@Req() req: any, @Body() dto: AiPracticeSummaryDto) {
     const data = await this.aiService.practiceSummary(req.user.id, dto);
+    return ok(data);
+  }
+
+  @Post("translate-questions")
+  async translateQuestions(@Req() req: any, @Body() dto: AiTranslateQuestionsDto) {
+    const data = await this.aiService.translateQuestions(req.user.id, dto);
     return ok(data);
   }
 }
