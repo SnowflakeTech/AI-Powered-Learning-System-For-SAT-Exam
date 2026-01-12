@@ -1,5 +1,5 @@
 import { Module } from "@nestjs/common";
-import { ConfigModule } from "@nestjs/config";
+import { ConfigModule, ConfigService } from "@nestjs/config";
 import { SequelizeModule } from "@nestjs/sequelize";
 import { APP_GUARD } from "@nestjs/core";
 import { ServeStaticModule } from "@nestjs/serve-static";
@@ -43,32 +43,40 @@ import { TestAssignment } from "./models/test-assignment.model";
     }),
     UploadModule,
 
-    SequelizeModule.forRoot({
-      dialect: "mysql",
-      host: process.env.DB_HOST || "localhost",
-      port: Number(process.env.DB_PORT || 3306),
-      username: process.env.DB_USER || "root",
-      password: process.env.DB_PASSWORD || process.env.DB_PASS || "11112004",
-      database: process.env.DB_NAME || "sat_hsa",
-      models: [
-        Passage,
-        User,
-        Test,
-        Question,
-        QuestionChoice,
-        TestQuestion,
-        ExamAttempt,
-        ExamAttemptAnswer,
-        Feedback,
-        AiConversation,
-        AiMessage,
-        TestAssignment,
-      ],
-      autoLoadModels: true,
-      synchronize: false,
-      sync: { alter: false },
-      logging: console.log,
-      timezone: "+07:00",
+    SequelizeModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (cfg: ConfigService) => {
+        const DB_SYNC = String(cfg.get("DB_SYNC") || "").toLowerCase() === "true";
+        const DB_LOG = String(cfg.get("DB_LOG") || "").toLowerCase() === "true";
+
+        return {
+          dialect: "mysql",
+          host: cfg.get("DB_HOST") || "localhost",
+          port: Number(cfg.get("DB_PORT") || 3306),
+          username: cfg.get("DB_USER") || "root",
+          password: cfg.get("DB_PASSWORD") || cfg.get("DB_PASS") || "",
+          database: cfg.get("DB_NAME") || "sat_hsa",
+          models: [
+            Passage,
+            User,
+            Test,
+            Question,
+            QuestionChoice,
+            TestQuestion,
+            ExamAttempt,
+            ExamAttemptAnswer,
+            Feedback,
+            AiConversation,
+            AiMessage,
+            TestAssignment,
+          ],
+          autoLoadModels: true,
+          synchronize: DB_SYNC,
+          sync: { alter: DB_SYNC },
+          logging: DB_LOG ? console.log : false,
+          timezone: "+07:00",
+        };
+      },
     }),
 
     AuthModule,

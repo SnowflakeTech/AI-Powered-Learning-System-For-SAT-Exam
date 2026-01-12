@@ -13,7 +13,9 @@ export class LookupService {
   }
 
   private async fetchText(url: string) {
-    const res = await fetch(url, {
+    const fetchFn: any = (global as any).fetch || require("node-fetch");
+
+    const res = await fetchFn(url, {
       method: "GET",
       redirect: "follow",
       headers: {
@@ -21,13 +23,17 @@ export class LookupService {
         Accept: "text/html,application/xhtml+xml",
       },
     });
+
     const text = await res.text();
-    return { status: res.status, text };
+    return { status: Number(res.status || 0), text };
   }
 
   private parseSatDates(html: string) {
     const dates: any[] = [];
-    const lines = String(html || "").split("\n").map((x) => x.trim()).filter(Boolean);
+    const lines = String(html || "")
+      .split("\n")
+      .map((x) => x.trim())
+      .filter(Boolean);
 
     const monthRegex =
       /(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}/i;
@@ -88,7 +94,9 @@ export class LookupService {
       if (!d) continue;
 
       const date = d[1];
-      const chunk = lines.slice(Math.max(0, i - 2), Math.min(lines.length, i + 4)).join(" • ");
+      const chunk = lines
+        .slice(Math.max(0, i - 2), Math.min(lines.length, i + 4))
+        .join(" • ");
 
       const roundMatch = chunk.match(/(Đợt|Dot)\s*\d+/i);
       const round = roundMatch ? roundMatch[0] : null;
@@ -121,7 +129,8 @@ export class LookupService {
     const ttl = this.cacheMs();
     if (this.satCache && now - this.satCache.ts < ttl) return this.satCache.data;
 
-    const sourceUrl = "https://satsuite.collegeboard.org/sat/registration/dates-deadlines";
+    const sourceUrl =
+      "https://satsuite.collegeboard.org/sat/registration/dates-deadlines";
 
     try {
       const { status, text } = await this.fetchText(sourceUrl);
@@ -129,13 +138,8 @@ export class LookupService {
       const data = { sourceUrl, dates, ok: true };
       this.satCache = { ts: now, data };
       return data;
-    } catch (e: any) {
-      const data = {
-        sourceUrl,
-        dates: [],
-        ok: false,
-        note: "Không lấy được dữ liệu SAT (server outbound/network).",
-      };
+    } catch {
+      const data = { sourceUrl, dates: [], ok: false };
       this.satCache = { ts: now, data };
       return data;
     }
@@ -154,13 +158,8 @@ export class LookupService {
       const data = { sourceUrl, rows, ok: true };
       this.hsaCache = { ts: now, data };
       return data;
-    } catch (e: any) {
-      const data = {
-        sourceUrl,
-        rows: [],
-        ok: false,
-        note: "Không lấy được dữ liệu HSA (server outbound/network).",
-      };
+    } catch {
+      const data = { sourceUrl, rows: [], ok: false };
       this.hsaCache = { ts: now, data };
       return data;
     }
