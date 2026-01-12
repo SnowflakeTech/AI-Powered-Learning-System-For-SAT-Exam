@@ -11,7 +11,7 @@ const EXAMS = [
 // Bạn chỉnh các preset này theo ý bạn
 const PRESETS = {
   SAT: {
-    durationSec: 3600, // cố định SAT
+    durationSec: 5880, // cố định SAT
     sections: [
       { key: "Reading & Writing", pct: 50 },
       { key: "Math", pct: 50 },

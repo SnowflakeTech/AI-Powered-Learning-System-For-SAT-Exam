@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import DashboardNavbar from "../components/DashboardNavBar.jsx";
-import { apiDelete, apiGet, apiPost } from "../lib/apiClient.js";
+import { apiDelete, apiGet, apiPatch, apiPost } from "../lib/apiClient.js";
 import { useAuth } from "../auth/AuthProvider.jsx";
 import AiTestCreateModal from "../components/AiTestCreateModal.jsx";
 
@@ -46,6 +46,15 @@ export default function Tests() {
       await load();
     } catch (e) {
       alert(e?.message || "Xoá đề thi thất bại");
+    }
+  };
+
+  const togglePublic = async (id, next) => {
+    try {
+      await apiPatch(`/tests/${id}`, { isPublic: next });
+      await load();
+    } catch (e) {
+      alert(e?.message || "Cập nhật công khai thất bại");
     }
   };
 
@@ -114,7 +123,14 @@ export default function Tests() {
           {loading ? (
             <div className="p-4 text-neutral-600">Đang tải...</div>
           ) : rows.length === 0 ? (
-            <div className="p-4 text-neutral-600">Chưa có đề thi nào.</div>
+            <div className="p-4 text-neutral-600">
+              Chưa có đề thi nào.
+              {!isAdmin ? (
+                <div className="mt-1 text-xs text-neutral-500">
+                  Bạn chỉ thấy đề công khai hoặc đề được giao. Hãy bấm “Tạo đề AI” để tạo đề riêng.
+                </div>
+              ) : null}
+            </div>
           ) : (
             rows.map((r) => (
               <div
@@ -124,7 +140,22 @@ export default function Tests() {
                 <div className="col-span-12 md:col-span-1 text-neutral-500">#{r.id}</div>
 
                 <div className="col-span-12 md:col-span-5">
-                  <div className="font-medium">{r.title || "Untitled Test"}</div>
+                  <div className="flex items-center gap-2">
+                    <div className="font-medium">{r.title || "Untitled Test"}</div>
+                    {isAdmin ? (
+                      <span
+                        className={
+                          "text-[11px] px-2 py-0.5 rounded-full border " +
+                          (r.isPublic
+                            ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                            : "bg-neutral-50 border-neutral-200 text-neutral-600")
+                        }
+                      >
+                        {r.isPublic ? "Public" : "Private"}
+                      </span>
+                    ) : null}
+                  </div>
+
                   <div className="mt-1 text-xs text-neutral-500 md:hidden">
                     {r.mode} • {r.quantities || 0} câu
                   </div>
@@ -144,6 +175,18 @@ export default function Tests() {
 
                     {isAdmin ? (
                       <>
+                        <button
+                          onClick={() => togglePublic(r.id, !r.isPublic)}
+                          className={
+                            "px-3 py-2 rounded-xl border " +
+                            (r.isPublic
+                              ? "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                              : "border-neutral-300 bg-white hover:bg-neutral-100")
+                          }
+                        >
+                          {r.isPublic ? "Công khai" : "Ẩn"}
+                        </button>
+
                         <button
                           onClick={() => goEdit(r.id)}
                           className="px-3 py-2 rounded-xl border border-neutral-300 bg-white hover:bg-neutral-100"

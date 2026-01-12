@@ -1,7 +1,7 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { InjectModel } from '@nestjs/sequelize';
-import * as bcrypt from 'bcrypt';
-import { User } from '../models/user.model';
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { InjectModel } from "@nestjs/sequelize";
+import * as bcrypt from "bcrypt";
+import { User } from "../models/user.model";
 
 @Injectable()
 export class UserService {
@@ -9,37 +9,42 @@ export class UserService {
 
   async register(username: string, email: string, password: string): Promise<User> {
     const existed = await this.userModel.findOne({ where: { email } });
-    if (existed) throw new BadRequestException('Email đã tồn tại');
+    if (existed) throw new BadRequestException("Email đã tồn tại");
 
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await this.userModel.create({
       username,
       email,
       passwordHash,
-      role: 'student',
+      role: "student",
     });
 
     return user;
   }
 
-  async getMe(userId: number): Promise<{ uid: number; email: string; username: string; role: string; name: string }> {
+  async getMe(userId: number): Promise<any> {
     const user = await this.userModel.findByPk(userId);
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException("User not found");
+
     return {
       uid: user.id,
       email: user.email,
       username: user.username,
       role: user.role,
       name: user.username,
+      createdAt: user.createdAt || null,
+      lastLoginAt: (user as any).lastLoginAt || null,
+      lastLoginIp: (user as any).lastLoginIp || null,
+      lastLoginUa: (user as any).lastLoginUa || null,
     };
   }
 
   async changePassword(userId: number, oldPassword: string, newPassword: string): Promise<void> {
     const user = await this.userModel.findByPk(userId);
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException("User not found");
 
     const ok = await bcrypt.compare(oldPassword, user.passwordHash);
-    if (!ok) throw new BadRequestException('Mật khẩu hiện tại không đúng');
+    if (!ok) throw new BadRequestException("Mật khẩu hiện tại không đúng");
 
     user.passwordHash = await bcrypt.hash(newPassword, 10);
     await user.save();

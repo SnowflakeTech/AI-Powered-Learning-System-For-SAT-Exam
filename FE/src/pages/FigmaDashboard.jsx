@@ -2,6 +2,27 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import DashboardNavbar from "../components/DashboardNavBar.jsx";
 import { apiGet } from "../lib/apiClient.js";
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Tooltip,
+  Legend,
+} from "chart.js";
+import { Bar, Line } from "react-chartjs-2";
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Tooltip,
+  Legend
+);
 
 function unwrap(res) {
   const root = res?.data ?? res;
@@ -11,7 +32,6 @@ function unwrap(res) {
 
 function parseDurationToSec(input) {
   const s = String(input || "");
-  // format từ BE: "Xm Ys"
   const m = /([0-9]+)\s*m/i.exec(s);
   const sec = /([0-9]+)\s*s/i.exec(s);
   const mm = m ? Number(m[1]) : 0;
@@ -30,6 +50,8 @@ export default function FigmaDashboard() {
 
   const [tests, setTests] = useState([]);
   const [history, setHistory] = useState([]);
+  const [insights, setInsights] = useState(null);
+
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
 
@@ -43,19 +65,26 @@ export default function FigmaDashboard() {
       setLoading(true);
       setErr("");
       try {
-        const [tRes, hRes] = await Promise.all([apiGet("/tests"), apiGet("/history")]);
+        const [tRes, hRes, iRes] = await Promise.all([
+          apiGet("/tests"),
+          apiGet("/history"),
+          apiGet("/ai/insights"),
+        ]);
         if (!alive) return;
 
         const t = unwrap(tRes);
         const h = unwrap(hRes);
+        const i = unwrap(iRes);
 
         setTests(Array.isArray(t) ? t : []);
         setHistory(Array.isArray(h) ? h : []);
+        setInsights(i || null);
       } catch (e) {
         if (!alive) return;
         setErr(e?.message || "Không tải được dữ liệu Dashboard");
         setTests([]);
         setHistory([]);
+        setInsights(null);
       } finally {
         if (!alive) return;
         setLoading(false);
@@ -97,11 +126,54 @@ export default function FigmaDashboard() {
   }, [completed]);
 
   const recommendedTest = useMemo(() => {
-    // BE đã sort id DESC => phần tử đầu là mới nhất
     return tests && tests.length ? tests[0] : null;
   }, [tests]);
 
   const topTests = useMemo(() => (tests || []).slice(0, 3), [tests]);
+
+  const skillChart = useMemo(() => {
+    const rows = Array.isArray(insights?.weakSkills) ? insights.weakSkills : [];
+    const labels = rows.map((x) => String(x?.skill || "Unknown"));
+    const values = rows.map((x) => Math.round(Number(x?.accuracy || 0) * 100));
+    return {
+      data: {
+        labels,
+        datasets: [{ label: "Độ chính xác (%)", data: values }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { y: { min: 0, max: 100 } },
+      },
+    };
+  }, [insights]);
+
+  const timeChart = useMemo(() => {
+    const rows = Array.isArray(insights?.recent3) ? insights.recent3.slice().reverse() : [];
+    const labels = rows.map((x) => String(x?.date || x?.testName || "—"));
+    const values = rows.map((x) => Number(x?.accuracyPercent || 0));
+    return {
+      data: {
+        labels,
+        datasets: [{ label: "Độ chính xác (%)", data: values, tension: 0.35 }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { y: { min: 0, max: 100 } },
+      },
+    };
+  }, [insights]);
+
+  const hasSkillChart = useMemo(() => {
+    return Array.isArray(insights?.weakSkills) && insights.weakSkills.length > 0;
+  }, [insights]);
+
+  const hasTimeChart = useMemo(() => {
+    return Array.isArray(insights?.recent3) && insights.recent3.length > 0;
+  }, [insights]);
 
   return (
     <div className="min-h-screen bg-neutral-50 text-neutral-900">
@@ -112,7 +184,6 @@ export default function FigmaDashboard() {
           <div className="rounded-xl bg-red-50 border border-red-200 text-red-700 p-4">{err}</div>
         ) : null}
 
-        {/* KPI cards */}
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {[
             {
@@ -142,7 +213,6 @@ export default function FigmaDashboard() {
           ))}
         </section>
 
-        {/* Next recommended test */}
         <section className="rounded-xl bg-white ring-1 ring-neutral-200 p-5 shadow-md transition hover:ring-neutral-300 hover:shadow-lg flex items-center justify-between">
           <div>
             <div className="text-neutral-500 text-sm">Bài thi gợi ý tiếp theo</div>
@@ -168,14 +238,15 @@ export default function FigmaDashboard() {
           </button>
         </section>
 
-        {/* Available tests */}
         <section className="rounded-xl bg-white ring-1 ring-neutral-200 p-5 shadow-md">
           <h3 className="mb-3 text-neutral-700 font-semibold">Bài thi có sẵn</h3>
 
           {loading ? (
             <div className="text-neutral-600">Đang tải danh sách đề thi...</div>
           ) : topTests.length === 0 ? (
-            <div className="text-neutral-600">Chưa có đề thi nào. Vào tab <b>Bài thi</b> để tạo/nhập đề.</div>
+            <div className="text-neutral-600">
+              Chưa có đề thi nào. Vào tab <b>Bài thi</b> để tạo/nhập đề.
+            </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {topTests.map((t) => (
@@ -207,15 +278,31 @@ export default function FigmaDashboard() {
           )}
         </section>
 
-        {/* Charts placeholders */}
         <section className="grid md:grid-cols-3 gap-4">
           <div className="md:col-span-2 rounded-xl bg-white ring-1 ring-neutral-200 p-5 shadow-md">
             <div className="font-semibold mb-2 text-neutral-700">Độ chính xác theo kỹ năng</div>
-            <div className="h-56 grid place-items-center text-neutral-400">(Tạm thời chưa hiển thị biểu đồ)</div>
+            {loading ? (
+              <div className="h-56 grid place-items-center text-neutral-400">Đang tải...</div>
+            ) : hasSkillChart ? (
+              <div className="h-56">
+                <Bar data={skillChart.data} options={skillChart.options} />
+              </div>
+            ) : (
+              <div className="h-56 grid place-items-center text-neutral-400">Chưa có dữ liệu kỹ năng.</div>
+            )}
           </div>
+
           <div className="rounded-xl bg-white ring-1 ring-neutral-200 p-5 shadow-md">
             <div className="font-semibold mb-2 text-neutral-700">Tiến độ theo thời gian</div>
-            <div className="h-56 grid place-items-center text-neutral-400">(Tạm thời chưa hiển thị biểu đồ)</div>
+            {loading ? (
+              <div className="h-56 grid place-items-center text-neutral-400">Đang tải...</div>
+            ) : hasTimeChart ? (
+              <div className="h-56">
+                <Line data={timeChart.data} options={timeChart.options} />
+              </div>
+            ) : (
+              <div className="h-56 grid place-items-center text-neutral-400">Chưa có dữ liệu theo thời gian.</div>
+            )}
           </div>
         </section>
       </main>

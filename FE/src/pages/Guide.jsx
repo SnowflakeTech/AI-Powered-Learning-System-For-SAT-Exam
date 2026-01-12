@@ -10,7 +10,7 @@ export default function Guide() {
         {/* Tiêu đề chính */}
         <header>
           <h1 className="text-3xl md:text-4xl font-extrabold mb-2">
-            Hướng dẫn sử dụng hệ thống đề thi HSA
+            Hướng dẫn sử dụng hệ thống luyện thi HSA/SAT
           </h1>
         </header>
 
@@ -20,7 +20,7 @@ export default function Guide() {
             1. Hệ thống này dùng để làm gì?
           </h2>
           <p className="text-sm md:text-base text-neutral-700">
-            Hệ thống đề thi HSA được thiết kế để:
+            Hệ thống luyện thi HSA/SAT được thiết kế để:
           </p>
           <ul className="list-disc list-inside text-sm md:text-base text-neutral-700 space-y-1">
             <li>Luyện tập các bài thi thử theo cấu trúc gần với kỳ thi HSA/SAT.</li>

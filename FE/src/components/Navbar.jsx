@@ -26,10 +26,10 @@ export default function Navbar() {
           />
           <div className="min-w-0 leading-tight">
             <div className="hidden sm:block font-semibold tracking-tight truncate">
-              Hệ thống đề thi HSA/SAT
+              Hệ thống luyện thi HSA/SAT
             </div>
             <div className="hidden sm:block text-xs text-white/80 truncate">
-              Tác giả: Phạm Sơn - Lê Quốc Anh
+              Tác giả: Phạm Sơn - Lê Quốc Anh - Đặng Sỹ Toàn
             </div>
           </div>
         </Link>

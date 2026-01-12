@@ -168,23 +168,31 @@ export class AiService {
   }
 
   private async callLLM(messages: LlmMsg[]): Promise<string> {
-    const primary = (process.env.AI_PRIMARY || "openai").toLowerCase();
-    const strategy = (process.env.AI_STRATEGY || "fallback").toLowerCase();
+  const primary = (process.env.AI_PRIMARY || "openai").toLowerCase();
+  const strategy = (process.env.AI_STRATEGY || "fallback").toLowerCase();
 
-    const tryPrimary = async () => this.callProvider(primary, messages);
-    const secondary = primary === "gemini" ? "openai" : "gemini";
-    const trySecondary = async () => this.callProvider(secondary, messages);
+  const providers = primary === "gemini" ? ["gemini", "openai"] : ["openai", "gemini"];
 
-    if (strategy === "fallback") {
-      try {
-        return await tryPrimary();
-      } catch {
-        return await trySecondary();
-      }
-    }
+  const tryOne = async (p: string) => {
+    return await this.callProvider(p, messages);
+  };
 
-    return await tryPrimary();
+  if (strategy !== "fallback") {
+    return await tryOne(providers[0]);
   }
+
+  let lastErr: any = null;
+
+  for (const p of providers) {
+    try {
+      return await tryOne(p);
+    } catch (e: any) {
+      lastErr = e;
+    }
+  }
+
+  throw new BadRequestException("AI tạm thời quá tải hoặc không phản hồi. Vui lòng thử lại sau.");
+}
 
   private toNormalizedTest(exam: "SAT" | "HSA", obj: any): NormalizedTest {
     if (!obj || typeof obj !== "object")
