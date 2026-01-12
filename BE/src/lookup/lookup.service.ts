@@ -15,7 +15,11 @@ export class LookupService {
   private async fetchText(url: string) {
     const res = await fetch(url, {
       method: "GET",
-      headers: { "User-Agent": "Mozilla/5.0", Accept: "text/html" },
+      redirect: "follow",
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        Accept: "text/html,application/xhtml+xml",
+      },
     });
     const text = await res.text();
     return { status: res.status, text };
@@ -23,10 +27,7 @@ export class LookupService {
 
   private parseSatDates(html: string) {
     const dates: any[] = [];
-    const lines = String(html || "")
-      .split("\n")
-      .map((x) => x.trim())
-      .filter(Boolean);
+    const lines = String(html || "").split("\n").map((x) => x.trim()).filter(Boolean);
 
     const monthRegex =
       /(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}/i;
@@ -87,9 +88,7 @@ export class LookupService {
       if (!d) continue;
 
       const date = d[1];
-      const chunk = lines
-        .slice(Math.max(0, i - 2), Math.min(lines.length, i + 4))
-        .join(" • ");
+      const chunk = lines.slice(Math.max(0, i - 2), Math.min(lines.length, i + 4)).join(" • ");
 
       const roundMatch = chunk.match(/(Đợt|Dot)\s*\d+/i);
       const round = roundMatch ? roundMatch[0] : null;
@@ -106,7 +105,7 @@ export class LookupService {
         note: chunk.length > 220 ? chunk.slice(0, 220) + "..." : chunk,
       });
 
-      if (rows.length >= 60) break;
+      if (rows.length >= 80) break;
     }
 
     const uniq = new Map<string, any>();
@@ -123,13 +122,23 @@ export class LookupService {
     if (this.satCache && now - this.satCache.ts < ttl) return this.satCache.data;
 
     const sourceUrl = "https://satsuite.collegeboard.org/sat/registration/dates-deadlines";
-    const { status, text } = await this.fetchText(sourceUrl);
 
-    const dates = status >= 200 && status < 400 ? this.parseSatDates(text) : [];
-    const data = { sourceUrl, dates };
-
-    this.satCache = { ts: now, data };
-    return data;
+    try {
+      const { status, text } = await this.fetchText(sourceUrl);
+      const dates = status >= 200 && status < 400 ? this.parseSatDates(text) : [];
+      const data = { sourceUrl, dates, ok: true };
+      this.satCache = { ts: now, data };
+      return data;
+    } catch (e: any) {
+      const data = {
+        sourceUrl,
+        dates: [],
+        ok: false,
+        note: "Không lấy được dữ liệu SAT (server outbound/network).",
+      };
+      this.satCache = { ts: now, data };
+      return data;
+    }
   }
 
   async getHsaSchedule() {
@@ -138,12 +147,22 @@ export class LookupService {
     if (this.hsaCache && now - this.hsaCache.ts < ttl) return this.hsaCache.data;
 
     const sourceUrl = "https://hsa.edu.vn/lich-thi/lich-thi-hsa";
-    const { status, text } = await this.fetchText(sourceUrl);
 
-    const rows = status >= 200 && status < 400 ? this.parseHsaSchedule(text) : [];
-    const data = { sourceUrl, rows };
-
-    this.hsaCache = { ts: now, data };
-    return data;
+    try {
+      const { status, text } = await this.fetchText(sourceUrl);
+      const rows = status >= 200 && status < 400 ? this.parseHsaSchedule(text) : [];
+      const data = { sourceUrl, rows, ok: true };
+      this.hsaCache = { ts: now, data };
+      return data;
+    } catch (e: any) {
+      const data = {
+        sourceUrl,
+        rows: [],
+        ok: false,
+        note: "Không lấy được dữ liệu HSA (server outbound/network).",
+      };
+      this.hsaCache = { ts: now, data };
+      return data;
+    }
   }
 }
