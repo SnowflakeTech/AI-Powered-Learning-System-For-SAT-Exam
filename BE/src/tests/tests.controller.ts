@@ -19,6 +19,12 @@ export class TestsController {
     return ok(rows);
   }
 
+  @Get(':id')
+  async getOne(@Req() req: any, @Param('id') id: string) {
+    const data = await this.testsService.getOne(req.user.id, Number(id));
+    return ok(data);
+  }
+
   @Roles('admin')
   @Post()
   async create(@Req() req: any, @Body() dto: CreateTestDto) {
@@ -49,10 +55,7 @@ export class TestsController {
 
   @Roles('admin')
   @Delete(':id')
-  async remove(
-    @Param('id', ParseIntPipe) id: number,
-    @Query('deleteOrphans') deleteOrphans?: string,
-  ) {
+  async remove(@Param('id', ParseIntPipe) id: number, @Query('deleteOrphans') deleteOrphans?: string) {
     const data = await this.testsService.removeTest(id, (deleteOrphans || 'false').toLowerCase() === 'true');
     return ok(data, 'Deleted');
   }

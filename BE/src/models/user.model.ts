@@ -10,11 +10,11 @@ import {
   Default,
   CreatedAt,
   UpdatedAt,
-} from 'sequelize-typescript';
+} from "sequelize-typescript";
 
-import type { Optional } from 'sequelize';
+import type { Optional } from "sequelize";
 
-export type UserRole = 'admin' | 'student';
+export type UserRole = "admin" | "student";
 
 export interface UserAttributes {
   id: number;
@@ -22,13 +22,19 @@ export interface UserAttributes {
   email: string;
   passwordHash: string;
   role: UserRole;
+  lastLoginAt?: Date | null;
+  lastLoginIp?: string | null;
+  lastLoginUa?: string | null;
   createdAt?: Date;
   updatedAt?: Date;
 }
 
-export type UserCreationAttributes = Optional<UserAttributes, 'id' | 'role' | 'createdAt' | 'updatedAt'>;
+export type UserCreationAttributes = Optional<
+  UserAttributes,
+  "id" | "role" | "lastLoginAt" | "lastLoginIp" | "lastLoginUa" | "createdAt" | "updatedAt"
+>;
 
-@Table({ tableName: 'users' })
+@Table({ tableName: "users" })
 export class User extends Model<UserAttributes, UserCreationAttributes> {
   @PrimaryKey
   @AutoIncrement
@@ -49,9 +55,21 @@ export class User extends Model<UserAttributes, UserCreationAttributes> {
   declare passwordHash: string;
 
   @AllowNull(false)
-  @Default('student')
-  @Column(DataType.ENUM('admin', 'student'))
+  @Default("student")
+  @Column(DataType.ENUM("admin", "student"))
   declare role: UserRole;
+
+  @AllowNull(true)
+  @Column(DataType.DATE)
+  declare lastLoginAt: Date | null;
+
+  @AllowNull(true)
+  @Column(DataType.STRING(64))
+  declare lastLoginIp: string | null;
+
+  @AllowNull(true)
+  @Column(DataType.STRING(255))
+  declare lastLoginUa: string | null;
 
   @CreatedAt
   @Column(DataType.DATE)

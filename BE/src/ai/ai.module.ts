@@ -1,18 +1,16 @@
-import { Module } from '@nestjs/common';
-import { SequelizeModule } from '@nestjs/sequelize';
-
-import { AiController } from './ai.controller';
-import { AiService } from './ai.service';
-
-import { AiConversation } from '../models/ai-conversation.model';
-import { AiMessage } from '../models/ai-message.model';
-import { ExamAttempt } from '../models/exam-attempt.model';
-import { ExamAttemptAnswer } from '../models/exam-attempt-answer.model';
-import { Test } from '../models/test.model';
-import { TestQuestion } from '../models/test-question.model';
-import { Question } from '../models/question.model';
-import { QuestionChoice } from '../models/question-choice.model';
-import { TestAssignment } from '../models/test-assignment.model';
+import { Module } from "@nestjs/common";
+import { SequelizeModule } from "@nestjs/sequelize";
+import { AiService } from "./ai.service";
+import { AiController } from "./ai.controller";
+import { AiConversation } from "../models/ai-conversation.model";
+import { AiMessage } from "../models/ai-message.model";
+import { ExamAttempt } from "../models/exam-attempt.model";
+import { ExamAttemptAnswer } from "../models/exam-attempt-answer.model";
+import { Test } from "../models/test.model";
+import { TestQuestion } from "../models/test-question.model";
+import { Question } from "../models/question.model";
+import { QuestionChoice } from "../models/question-choice.model";
+import { TestAssignment } from "../models/test-assignment.model";
 
 @Module({
   imports: [

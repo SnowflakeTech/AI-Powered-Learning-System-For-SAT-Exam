@@ -6,6 +6,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -42,6 +43,16 @@ export class CreateQuestionWithChoicesDto {
   @IsOptional()
   @IsString()
   passage?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  imageUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  imageAlt?: string;
 
   @IsArray()
   @ArrayMinSize(2)

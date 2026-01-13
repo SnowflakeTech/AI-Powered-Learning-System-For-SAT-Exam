@@ -8,6 +8,8 @@ import { TestQuestion } from '../models/test-question.model';
 import { Question } from '../models/question.model';
 import { QuestionChoice } from '../models/question-choice.model';
 
+import { AiService } from '../ai/ai.service';
+
 function fmtDuration(sec?: number | null) {
   const s = Math.max(0, Number(sec ?? 0));
   const m = Math.floor(s / 60);
@@ -26,11 +28,17 @@ function parseAttemptId(input: string) {
   return Number(s);
 }
 
+function toLetter(idx: any): 'A' | 'B' | 'C' | 'D' | null {
+  const n = Number(idx);
+  if (!Number.isFinite(n)) return null;
+  if (n < 0 || n > 3) return null;
+  return String.fromCharCode(65 + n) as any;
+}
+
 type SubmitBody = {
   startedAt?: string | Date;
   submittedAt?: string | Date;
   durationSec?: number;
-  
   answers?: Record<string, any> | Array<{ questionId: number; choiceId: number | null }>;
 };
 
@@ -43,6 +51,7 @@ export class HistoryService {
     @InjectModel(TestQuestion) private readonly testQuestionModel: typeof TestQuestion,
     @InjectModel(Question) private readonly questionModel: typeof Question,
     @InjectModel(QuestionChoice) private readonly choiceModel: typeof QuestionChoice,
+    private readonly aiService: AiService,
   ) {}
 
   async submitAttempt(userId: number, testId: number, body: SubmitBody) {
@@ -56,7 +65,6 @@ export class HistoryService {
     const qids = links.map((l) => (l as any).questionId as number);
     if (!qids.length) throw new BadRequestException('Đề thi chưa có câu hỏi');
 
-    // map order để build history detail
     const orderMap = new Map<number, number>();
     links.forEach((l: any) => orderMap.set(l.questionId, l.order ?? 0));
 
@@ -68,11 +76,12 @@ export class HistoryService {
     const qMap = new Map<number, any>();
     for (const q of questions) {
       const qq = q.toJSON() as any;
-      const choices = (qq.questionChoices || []).slice().sort((a: any, b: any) => (a.choiceOrder ?? 0) - (b.choiceOrder ?? 0));
+      const choices = (qq.questionChoices || [])
+        .slice()
+        .sort((a: any, b: any) => (a.choiceOrder ?? 0) - (b.choiceOrder ?? 0));
       qMap.set(qq.id, { ...qq, questionChoices: choices });
     }
 
-    // normalize answers
     const ansList: Array<{ questionId: number; choiceId: number | null }> = [];
     const a = body?.answers as any;
 
@@ -90,11 +99,9 @@ export class HistoryService {
       }
     }
 
-    // chỉ chấp nhận answer thuộc đề
     const qidSet = new Set(qids);
     const filtered = ansList.filter((x) => qidSet.has(x.questionId));
 
-    // tính điểm
     let correct = 0;
     const answerRows: any[] = [];
 
@@ -135,7 +142,6 @@ export class HistoryService {
       totalScore,
     } as any);
 
-    // bulk create answers
     await this.attemptAnswerModel.bulkCreate(
       answerRows.map((r) => ({ ...r, attemptId: attempt.id })),
     );
@@ -200,7 +206,6 @@ export class HistoryService {
 
     const test = (attempt as any).test as Test | undefined;
 
-    // lấy order mapping
     const links = await this.testQuestionModel.findAll({
       where: { testId: (attempt as any).testId },
       order: [['order', 'ASC']],
@@ -215,13 +220,12 @@ export class HistoryService {
         const q = a.question?.toJSON?.() ?? a.question;
         if (!q) return null;
 
-        const choices = (q.questionChoices || []).slice().sort((x: any, y: any) => (x.choiceOrder ?? 0) - (y.choiceOrder ?? 0));
+        const choices = (q.questionChoices || [])
+          .slice()
+          .sort((x: any, y: any) => (x.choiceOrder ?? 0) - (y.choiceOrder ?? 0));
         const options = choices.map((c: any) => c.choiceText);
 
-        const correctIdx = Math.max(
-          0,
-          choices.findIndex((c: any) => !!c.isCorrect),
-        );
+        const correctIdx = Math.max(0, choices.findIndex((c: any) => !!c.isCorrect));
 
         const chosenIdx = a.selectedChoiceId
           ? choices.findIndex((c: any) => Number(c.id) === Number(a.selectedChoiceId))
@@ -238,6 +242,8 @@ export class HistoryService {
           topic: q.skill ?? q.section ?? null,
           difficulty: q.difficulty ?? null,
           explanation: null,
+          finalAnswer: null,
+          picked: null,
         };
       })
       .filter(Boolean)
@@ -245,11 +251,74 @@ export class HistoryService {
 
     const submitted = (attempt as any).submittedAt ?? (attempt as any).createdAt;
 
+    const testName = test?.title ?? `Test #${(attempt as any).testId}`;
+    const lower = String(testName).toLowerCase();
+    const exam: 'SAT' | 'HSA' = lower.includes('hsa') ? 'HSA' : 'SAT';
+
+    let aiExplanations: any = null;
+    let aiSummary: any = null;
+
+    try {
+      const explainPayload = questions.map((q: any) => {
+        const correct = toLetter(q.correctIndex) || 'A';
+        const picked = toLetter(q.chosenIndex);
+
+        return {
+          tempKey: `q-${attemptId}-${q.no}`,
+          questionId: null,
+          content: String(q.content || ''),
+          choices: (q.options || []).slice(0, 4).map((t: any, i: number) => ({
+            label: String.fromCharCode(65 + i),
+            text: String(t ?? ''),
+          })),
+          picked,
+          correct,
+          skill: q.topic ?? null,
+          difficulty: q.difficulty ?? null,
+        };
+      });
+
+      const explainRes = await this.aiService.explainQuestions(userId, {
+        exam,
+        questions: explainPayload,
+      } as any);
+
+      aiExplanations = (explainRes as any)?.explanations ?? (explainRes as any) ?? null;
+
+      const results = questions.map((q: any) => ({
+        skill: q.topic ?? null,
+        difficulty: q.difficulty ?? null,
+        correct: Number(q.chosenIndex) === Number(q.correctIndex),
+      }));
+
+      const summaryRes = await this.aiService.practiceSummary(userId, {
+        exam,
+        results,
+      } as any);
+
+      aiSummary = summaryRes ?? null;
+
+      if (aiExplanations && typeof aiExplanations === 'object') {
+        for (const q of questions as any[]) {
+          const k = `q-${attemptId}-${q.no}`;
+          const ex = aiExplanations?.[k] ?? null;
+          if (ex) {
+            q.explanation = ex.explanation ?? null;
+            q.finalAnswer = ex.finalAnswer ?? null;
+            q.picked = ex.picked ?? null;
+          }
+        }
+      }
+    } catch {
+      aiExplanations = null;
+      aiSummary = null;
+    }
+
     return {
       id: toAttemptKey((attempt as any).id),
       attemptId: (attempt as any).id,
       testId: (attempt as any).testId,
-      testName: test?.title ?? `Test #${(attempt as any).testId}`,
+      testName,
       date: submitted ? new Date(submitted).toISOString().slice(0, 10) : null,
       score: (attempt as any).score ?? 0,
       totalScore: (attempt as any).totalScore ?? 800,
@@ -257,6 +326,11 @@ export class HistoryService {
       totalQuestions: (attempt as any).totalQuestions ?? 0,
       time: fmtDuration((attempt as any).durationSec),
       status: (attempt as any).status === 'in_progress' ? 'In progress' : 'Completed',
+      exam,
+      ai: {
+        explanations: aiExplanations,
+        summary: aiSummary,
+      },
       questions,
     };
   }

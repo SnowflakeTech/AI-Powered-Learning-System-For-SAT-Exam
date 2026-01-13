@@ -1,16 +1,20 @@
-// src/pages/Tests.jsx
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import DashboardNavbar from "../components/DashboardNavBar.jsx";
-import { apiDelete, apiGet } from "../lib/apiClient.js";
+import { apiDelete, apiGet, apiPatch, apiPost } from "../lib/apiClient.js";
 import { useAuth } from "../auth/AuthProvider.jsx";
+import AiTestCreateModal from "../components/AiTestCreateModal.jsx";
 
 export default function Tests() {
   const nav = useNavigate();
   const { user } = useAuth();
+
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
 
   const isAdmin = user?.role === "admin";
 
@@ -32,9 +36,7 @@ export default function Tests() {
   }, []);
 
   const goExam = (id) => nav(`/exam/${id}`);
-
   const goCreate = () => nav("/admin/tests/new");
-
   const goEdit = (id) => nav(`/admin/tests/${id}/edit`);
 
   const deleteTest = async (id) => {
@@ -47,6 +49,35 @@ export default function Tests() {
     }
   };
 
+  const togglePublic = async (id, next) => {
+    try {
+      await apiPatch(`/tests/${id}`, { isPublic: next });
+      await load();
+    } catch (e) {
+      alert(e?.message || "Cập nhật công khai thất bại");
+    }
+  };
+
+  const submitAiCreate = async (payload) => {
+    setAiLoading(true);
+    setErr("");
+    try {
+      const res = await apiPost("/ai/generate-test", payload);
+      const testId = res?.data?.testId;
+
+      setAiOpen(false);
+      await load();
+
+      if (testId && confirm("Tạo đề AI thành công. Bạn muốn làm bài ngay không?")) {
+        nav(`/exam/${testId}`);
+      }
+    } catch (e) {
+      setErr(e?.message || "Tạo đề AI thất bại");
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-neutral-50">
       <DashboardNavbar />
@@ -54,14 +85,24 @@ export default function Tests() {
       <div className="max-w-6xl mx-auto p-6">
         <div className="flex items-center justify-between gap-3">
           <h1 className="text-2xl font-semibold">Danh sách đề thi</h1>
-          {isAdmin && (
+
+          <div className="flex items-center gap-2">
             <button
-              onClick={goCreate}
-              className="px-4 py-2 rounded-xl bg-neutral-900 text-white hover:bg-neutral-800"
+              onClick={() => setAiOpen(true)}
+              className="px-4 py-2 rounded-xl bg-green-700 text-white hover:bg-green-600"
             >
-              + Tạo đề thi
+              + Tạo đề AI
             </button>
-          )}
+
+            {isAdmin && (
+              <button
+                onClick={goCreate}
+                className="px-4 py-2 rounded-xl bg-neutral-900 text-white hover:bg-neutral-800"
+              >
+                + Tạo đề thi
+              </button>
+            )}
+          </div>
         </div>
 
         {err && (
@@ -82,7 +123,14 @@ export default function Tests() {
           {loading ? (
             <div className="p-4 text-neutral-600">Đang tải...</div>
           ) : rows.length === 0 ? (
-            <div className="p-4 text-neutral-600">Chưa có đề thi nào.</div>
+            <div className="p-4 text-neutral-600">
+              Chưa có đề thi nào.
+              {!isAdmin ? (
+                <div className="mt-1 text-xs text-neutral-500">
+                  Bạn chỉ thấy đề công khai hoặc đề được giao. Hãy bấm “Tạo đề AI” để tạo đề riêng.
+                </div>
+              ) : null}
+            </div>
           ) : (
             rows.map((r) => (
               <div
@@ -92,7 +140,22 @@ export default function Tests() {
                 <div className="col-span-12 md:col-span-1 text-neutral-500">#{r.id}</div>
 
                 <div className="col-span-12 md:col-span-5">
-                  <div className="font-medium">{r.title || "Untitled Test"}</div>
+                  <div className="flex items-center gap-2">
+                    <div className="font-medium">{r.title || "Untitled Test"}</div>
+                    {isAdmin ? (
+                      <span
+                        className={
+                          "text-[11px] px-2 py-0.5 rounded-full border " +
+                          (r.isPublic
+                            ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                            : "bg-neutral-50 border-neutral-200 text-neutral-600")
+                        }
+                      >
+                        {r.isPublic ? "Public" : "Private"}
+                      </span>
+                    ) : null}
+                  </div>
+
                   <div className="mt-1 text-xs text-neutral-500 md:hidden">
                     {r.mode} • {r.quantities || 0} câu
                   </div>
@@ -112,6 +175,18 @@ export default function Tests() {
 
                     {isAdmin ? (
                       <>
+                        <button
+                          onClick={() => togglePublic(r.id, !r.isPublic)}
+                          className={
+                            "px-3 py-2 rounded-xl border " +
+                            (r.isPublic
+                              ? "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                              : "border-neutral-300 bg-white hover:bg-neutral-100")
+                          }
+                        >
+                          {r.isPublic ? "Công khai" : "Ẩn"}
+                        </button>
+
                         <button
                           onClick={() => goEdit(r.id)}
                           className="px-3 py-2 rounded-xl border border-neutral-300 bg-white hover:bg-neutral-100"
@@ -139,6 +214,14 @@ export default function Tests() {
           (ví dụ: /api/v1/auth/login, /api/v1/tests).
         </p>
       </div>
+
+      <AiTestCreateModal
+        open={aiOpen}
+        onClose={() => (!aiLoading ? setAiOpen(false) : null)}
+        onSubmit={submitAiCreate}
+        loading={aiLoading}
+        isAdmin={isAdmin}
+      />
     </div>
   );
 }

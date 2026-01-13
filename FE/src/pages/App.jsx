@@ -1,8 +1,6 @@
-// src/pages/App.jsx
 import React from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 
-// Pages
 import Home from "./Home.jsx";
 import Login from "./Login.jsx";
 import Register from "./Register.jsx";
@@ -19,23 +17,24 @@ import Guide from "./Guide.jsx";
 import StudyAssistant from "./StudyAssistant.jsx";
 import AdminTestBuilder from "./AdminTestBuilder.jsx";
 import AdminTestEditor from "./AdminTestEditor.jsx";
+import Practice from "./Practice.jsx";
+import PracticeSession from "./PracticeSession.jsx";
+import About from "./About.jsx";
+import TraCuu from "./TraCuu.jsx";
 
-// Route guard
 import ProtectedRoute from "../routes/ProtectedRoute.jsx";
 import AdminRoute from "../routes/AdminRoute.jsx";
 
 export default function App() {
   return (
     <Routes>
-      {/* Trang mặc định: Home */}
       <Route path="/" element={<Home />} />
-
-      {/* Public */}
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/huong-dan" element={<Guide />} />
+      <Route path="/ve-chung-toi" element={<About />} />
+      <Route path="/tra-cuu" element={<TraCuu />} />
 
-      {/* Private (cần ProtectedRoute) */}
       <Route
         path="/dashboard"
         element={
@@ -44,6 +43,7 @@ export default function App() {
           </ProtectedRoute>
         }
       />
+
       <Route
         path="/tests"
         element={
@@ -53,7 +53,24 @@ export default function App() {
         }
       />
 
-      {/* Admin: tạo/chỉnh sửa đề thi */}
+      <Route
+        path="/practice"
+        element={
+          <ProtectedRoute>
+            <Practice />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/practice/session"
+        element={
+          <ProtectedRoute>
+            <PracticeSession />
+          </ProtectedRoute>
+        }
+      />
+
       <Route
         path="/admin/tests/new"
         element={
@@ -62,6 +79,7 @@ export default function App() {
           </AdminRoute>
         }
       />
+
       <Route
         path="/admin/tests/:id/edit"
         element={
@@ -79,6 +97,7 @@ export default function App() {
           </ProtectedRoute>
         }
       />
+
       <Route
         path="/exam/:id"
         element={
@@ -87,6 +106,7 @@ export default function App() {
           </ProtectedRoute>
         }
       />
+
       <Route
         path="/feedback"
         element={
@@ -95,7 +115,6 @@ export default function App() {
           </ProtectedRoute>
         }
       />
-
       <Route
         path="/feedback/:id"
         element={
@@ -104,6 +123,7 @@ export default function App() {
           </ProtectedRoute>
         }
       />
+
       <Route
         path="/settings"
         element={
@@ -113,7 +133,6 @@ export default function App() {
         }
       />
 
-      {/* History: cần đăng nhập */}
       <Route
         path="/history"
         element={
@@ -131,7 +150,6 @@ export default function App() {
         }
       />
 
-      {/* Stats: vẫn có thể giữ là private nếu muốn */}
       <Route
         path="/stats"
         element={
@@ -141,7 +159,6 @@ export default function App() {
         }
       />
 
-      {/* Fallback */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
